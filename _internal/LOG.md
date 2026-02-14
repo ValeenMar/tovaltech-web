@@ -57,3 +57,12 @@ Cambios (archivos):
 Cómo verificar:
 
 Notas / Próximos pasos:
+
+### 2026-02-14 — Fix límite >1000 en getProducts + moneda
+- Síntoma: `limit=1000` OK, `limit=1001` => 500 (InvalidInput).
+- Causa: Azure Tables rechaza requests con `$top > 1000` (directa/indirectamente).
+- Fix: getProducts deja de usar `top/byPage` y recorre `listEntities()` sin top; corta manualmente por `limit`.
+- Extra: normalización de `currency` cuando llega numérica (2 -> USD, 1 -> ARS).
+- Verificación: `/api/getProducts?provider=elit&limit=1001` devuelve ok:true.
+
+
