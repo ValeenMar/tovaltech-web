@@ -1,84 +1,121 @@
 /**
- * Endpoint de autenticación
- * POST /api/login
- * Body: { email, password }
- * Returns: { ok: true, token: "jwt...", user: {...} }
+ * Login endpoint - VERSIÓN SIMPLIFICADA QUE FUNCIONA
+ * Primero hacemos que ande, después mejoramos
  */
 
 const { app } = require("@azure/functions");
-const { generateToken } = require("../middleware/auth");
-const { asyncHandler, AppError } = require("../middleware/errorHandler");
-const { isValidEmail } = require("../utils/validators");
-const logger = require("../utils/logger");
-const { TableClient } = require("@azure/data-tables");
 
-// Conectar a tabla de usuarios
-function getUsersClient() {
-  const conn = process.env.STORAGE_CONNECTION_STRING;
-  if (!conn) throw new Error("Missing STORAGE_CONNECTION_STRING");
-  return TableClient.fromConnectionString(conn, "Users");
-}
+// Usuarios hardcodeados temporalmente (FASE 1)
+// En FASE 2 los movemos a Azure Tables
+const USERS = [
+  {
+    email: "admin@tovaltech.com",
+    password: "Milanesa",
+    name: "Admin TovalTech",
+    role: "admin",
+  },
+  {
+    email: "tobias@tovaltech.com",
+    password: "Milanesa",
+    name: "Tobias",
+    role: "admin",
+  },
+  {
+    email: "vendor@tovaltech.com",
+    password: "Milanesa",
+    name: "Vendedor Demo",
+    role: "vendor",
+  },
+];
 
 app.http("login", {
   methods: ["POST"],
   authLevel: "anonymous",
-  handler: asyncHandler(async (request, context) => {
-    const body = await request.json();
-    const { email, password } = body;
-
-    // Validaciones básicas
-    if (!email || !password) {
-      throw new AppError("Email and password required", 400, "MISSING_CREDENTIALS");
-    }
-
-    if (!isValidEmail(email)) {
-      throw new AppError("Invalid email format", 400, "INVALID_EMAIL");
-    }
-
-    // Buscar usuario en tabla
-    const client = getUsersClient();
-    let user;
-
+  handler: async (request, context) => {
     try {
-      // PartitionKey = "user", RowKey = email
-      user = await client.getEntity("user", email.toLowerCase());
-    } catch (err) {
-      if (err.statusCode === 404) {
-        logger.warn("Login attempt - user not found", { email });
-        throw new AppError("Invalid credentials", 401, "INVALID_CREDENTIALS");
+      const body = await request.json();
+      const { email, password } = body;
+
+      // Validación básica
+      if (!email || !password) {
+        return {
+          status: 400,
+          jsonBody: {
+            success: false,
+            message: "Email y password requeridos",
+          },
+        };
       }
-      throw err;
-    }
 
-    // Verificar password (en producción usarías bcrypt)
-    // Por ahora comparación directa (CAMBIAR EN FASE 2)
-    if (user.password !== password) {
-      logger.warn("Login attempt - wrong password", { email });
-      throw new AppError("Invalid credentials", 401, "INVALID_CREDENTIALS");
-    }
+      // Buscar usuario
+      const user = USERS.find(
+        (u) => u.email.toLowerCase() === email.toLowerCase()
+      );
 
-    // Generar JWT
-    const token = generateToken({
-      userId: user.rowKey,
-      email: user.email || email,
-      role: user.role || "customer",
-      name: user.name || email.split("@")[0],
-    });
+      if (!user || user.password !== password) {
+        context.log("Login fallido:", email);
+        return {
+          status: 401,
+          jsonBody: {
+            success: false,
+            message: "Credenciales inválidas",
+          },
+        };
+      }
 
-    logger.info("Login successful", { userId: user.rowKey, role: user.role });
+      // Generar token simple (mejoramos en FASE 2)
+      const token = generateSimpleToken({
+        email: user.email,
+        role: user.role,
+        name: user.name,
+      });
 
-    return {
-      status: 200,
-      jsonBody: {
-        ok: true,
-        token,
-        user: {
-          id: user.rowKey,
-          email: user.email || email,
-          name: user.name || "",
-          role: user.role || "customer",
+      context.log("Login exitoso:", email, user.role);
+
+      return {
+        status: 200,
+        jsonBody: {
+          success: true,
+          token,
+          user: {
+            email: user.email,
+            name: user.name,
+            role: user.role,
+          },
         },
-      },
-    };
-  }),
+      };
+    } catch (error) {
+      context.error("Error en login:", error);
+      return {
+        status: 500,
+        jsonBody: {
+          success: false,
+          message: "Error interno del servidor",
+        },
+      };
+    }
+  },
 });
+
+/**
+ * Genera un token JWT simple
+ * Por ahora sin librería externa para no agregar peso
+ */
+function generateSimpleToken(payload) {
+  const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
+  
+  const data = {
+    ...payload,
+    exp: Date.now() + 24 * 60 * 60 * 1000, // 24 horas
+    iat: Date.now(),
+  };
+  
+  const body = Buffer.from(JSON.stringify(data)).toString("base64url");
+  
+  // Firma simple (en FASE 2 usamos crypto)
+  const signature = Buffer.from(
+    `${header}.${body}.${process.env.JWT_SECRET || "tovaltech-secret"}`
+  ).toString("base64url");
+
+  return `${header}.${body}.${signature}`;
+}

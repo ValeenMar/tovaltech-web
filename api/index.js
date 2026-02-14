@@ -8,6 +8,5 @@ require("./functions/login");
 require("./functions/chat");
 require("./functions/getProducts");
 require("./functions/getProviders");
-// File: /api/index.js
 require("./functions/providersElitImport");
 require("./functions/health");
