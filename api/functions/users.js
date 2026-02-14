@@ -22,24 +22,35 @@ function getUsersClient() {
  */
 function extractUser(request) {
   const authHeader = request.headers.get("authorization");
-  const token = authHeader?.replace("Bearer ", "");
+  
+  if (!authHeader) {
+    return null;
+  }
 
-  if (!token) return null;
+  const token = authHeader.replace("Bearer ", "").trim();
+  
+  if (!token) {
+    return null;
+  }
 
   try {
     // Decodificar token (parte 2 = payload)
     const parts = token.split(".");
-    if (parts.length !== 3) return null;
+    if (parts.length !== 3) {
+      return null;
+    }
 
-    const payload = JSON.parse(
-      Buffer.from(parts[1], "base64url").toString("utf-8")
-    );
+    const payloadB64 = parts[1];
+    const payloadJson = Buffer.from(payloadB64, "base64url").toString("utf-8");
+    const payload = JSON.parse(payloadJson);
 
     // Verificar expiración
-    if (payload.exp && Date.now() > payload.exp) return null;
+    if (payload.exp && Date.now() > payload.exp) {
+      return null;
+    }
 
     return payload;
-  } catch {
+  } catch (err) {
     return null;
   }
 }
@@ -50,17 +61,36 @@ function extractUser(request) {
 function requireAdmin(request, context) {
   const user = extractUser(request);
 
-  if (!user || user.role !== "admin") {
-    context.log("Acceso denegado - no admin:", user?.email);
+  context.log("Auth check:", {
+    hasUser: !!user,
+    userEmail: user?.email,
+    userRole: user?.role,
+    authHeader: request.headers.get("authorization") ? "present" : "missing",
+  });
+
+  if (!user) {
+    context.log("❌ No user found in token");
     return {
       status: 403,
       jsonBody: {
         ok: false,
-        error: "Acceso denegado. Solo administradores.",
+        error: "No autenticado. Por favor ingresá de nuevo.",
       },
     };
   }
 
+  if (user.role !== "admin") {
+    context.log("❌ User is not admin:", user.email, user.role);
+    return {
+      status: 403,
+      jsonBody: {
+        ok: false,
+        error: `Acceso denegado. Tu rol es: ${user.role}. Se requiere: admin.`,
+      },
+    };
+  }
+
+  context.log("✅ Admin access granted:", user.email);
   return { ok: true, user };
 }
 
