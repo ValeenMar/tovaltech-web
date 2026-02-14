@@ -26,6 +26,61 @@ function stripQuotes(s) {
   return v.replace(/^"+|"+$/g, "");
 }
 
+/** Verifica token y extrae usuario */
+function extractUser(request, context) {
+  // 1) Header custom (SWA-friendly)
+  const custom =
+    request.headers.get("x-tovaltech-token") ||
+    request.headers.get("x-tt-token") ||
+    request.headers.get("x-auth-token");
+
+  let token = custom ? stripQuotes(custom) : null;
+
+  // 2) Fallback: Authorization (local u otros hosts)
+  if (!token) {
+    const authHeader =
+      request.headers.get("authorization") || request.headers.get("Authorization");
+    if (!authHeader) {
+      context?.log("No token header (custom/authorization)");
+      return null;
+    }
+    token = stripQuotes(authHeader.replace(/^Bearer\s+/i, ""));
+  }
+
+  if (!token) {
+    context?.log("Empty token");
+    return null;
+  }
+
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) {
+      context?.log("Invalid token format - expected 3 parts, got", parts.length);
+      return null;
+    }
+
+    const payloadJson = decodeBase64Url(parts[1]);
+    const payload = JSON.parse(payloadJson);
+
+    context?.log("Token decoded successfully:", {
+      email: payload.email,
+      role: payload.role,
+      exp: payload.exp
+    });
+
+    if (payload.exp && Date.now() > payload.exp) {
+      context?.log("Token expired");
+      return null;
+    }
+
+    return payload;
+  } catch (err) {
+    context?.error("Error decodificando token:", err.message);
+    return null;
+  }
+}
+
+
 /**
  * SWA puede ignorar/sobrescribir Authorization.
  * Preferimos un header custom para el token.

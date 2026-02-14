@@ -207,11 +207,12 @@ export function wireSettings() {
       const res = await fetch(url, {
         method,
         headers: {
-          "Content-Type": "application/json",
-          "x-tovaltech-token": token,
-Authorization: `Bearer ${token}` // (dejalo como fallback local)
-,
-        },
+  "Content-Type": "application/json",
+  "x-tovaltech-token": token,
+  Authorization: `Bearer ${token}`,
+},
+
+
         body: JSON.stringify(body),
       });
 
