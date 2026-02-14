@@ -49,20 +49,21 @@ const routes = {
   "/chat": ChatPage,
 
   "/login": () => `
-    <div class="authWrap">
-      <div class="authCard">
-        <h2>Login</h2>
-        <p class="muted" style="margin-top:8px;">Acceso de administración (solo para Jeffrey).</p>
+  <div class="authWrap">
+    <div class="authCard">
+      <h2>Login</h2>
+      <p class="muted" style="margin-top:8px;">Ingresá con tu email y contraseña.</p>
 
-        <div class="chat">
-          <input id="pw" type="password" placeholder="Password" />
-          <button id="loginBtn" class="btn btnPrimary">Entrar</button>
-        </div>
-
-        <p id="msg" class="errorText"></p>
+      <div style="display:flex; flex-direction:column; gap:12px; margin-top:16px;">
+        <input id="email" type="email" placeholder="Email" autocomplete="email" style="width:100%;" />
+        <input id="pw" type="password" placeholder="Password" autocomplete="current-password" style="width:100%;" />
+        <button id="loginBtn" class="btn btnPrimary" style="width:100%;">Entrar</button>
       </div>
+
+      <p id="msg" class="errorText"></p>
     </div>
-  `,
+  </div>
+`,
 };
 
 function navigateTo(path, { replace = false } = {}) {
@@ -73,9 +74,25 @@ function navigateTo(path, { replace = false } = {}) {
 }
 
 async function tryLogin() {
+  const emailInput = document.querySelector("#email");
   const pwInput = document.querySelector("#pw");
   const msg = document.querySelector("#msg");
+  
+  const email = (emailInput?.value || "").trim();
   const password = (pwInput?.value || "").trim();
+
+  // Validación básica
+  if (!email) {
+    msg.textContent = "Por favor ingresá tu email";
+    emailInput?.focus();
+    return;
+  }
+
+  if (!password) {
+    msg.textContent = "Por favor ingresá tu contraseña";
+    pwInput?.focus();
+    return;
+  }
 
   msg.textContent = "Verificando...";
 
@@ -83,30 +100,63 @@ async function tryLogin() {
     const response = await fetch("/api/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ email, password }),
     });
 
     const raw = await response.text();
     let result = {};
-    try { result = raw ? JSON.parse(raw) : {}; } catch { result = { message: raw }; }
-
-    if (response.ok) {
-      setAuthed(result.token);
-      const next = new URLSearchParams(window.location.search).get("next");
-      navigateTo(next || "/", { replace: true });
-    } else {
-      msg.textContent = result.message || `HTTP ${response.status}`;
+    try { 
+      result = raw ? JSON.parse(raw) : {}; 
+    } catch { 
+      result = { message: raw }; 
     }
-  } catch {
-    msg.textContent = "Error de red / API no disponible";
+
+    if (response.ok && result.success) {
+      // Guardar token
+      setAuthed(result.token);
+      
+      // Guardar info del usuario (opcional, para mostrar nombre después)
+      if (result.user) {
+        localStorage.setItem("tovaltech_user", JSON.stringify(result.user));
+      }
+
+      msg.textContent = "Login exitoso, redirigiendo...";
+      msg.style.color = "#4ade80"; // verde
+
+      // Redirigir según rol
+      setTimeout(() => {
+        const next = new URLSearchParams(window.location.search).get("next");
+        navigateTo(next || "/", { replace: true });
+      }, 500);
+    } else {
+      msg.style.color = "#ff6b6b"; // rojo
+      msg.textContent = result.message || `Error: ${response.status}`;
+    }
+  } catch (err) {
+    msg.style.color = "#ff6b6b";
+    msg.textContent = "Error de conexión. Intentá de nuevo.";
+    console.error("Login error:", err);
   }
 }
 
 function wireLogin() {
-  document.querySelector("#loginBtn")?.addEventListener("click", tryLogin);
-  document.querySelector("#pw")?.addEventListener("keydown", (e) => {
+  const loginBtn = document.querySelector("#loginBtn");
+  const emailInput = document.querySelector("#email");
+  const pwInput = document.querySelector("#pw");
+
+  loginBtn?.addEventListener("click", tryLogin);
+  
+  // Enter en cualquier campo hace submit
+  emailInput?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") tryLogin();
   });
+  
+  pwInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") tryLogin();
+  });
+
+  // Focus automático en email al cargar
+  emailInput?.focus();
 }
 
 function updateNavUI() {
