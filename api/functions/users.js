@@ -1,11 +1,6 @@
 /**
  * Gestión de usuarios - CRUD completo
  * Solo accesible por admins
- * 
- * GET    /api/users          - Listar todos los usuarios
- * POST   /api/users          - Crear nuevo usuario
- * PUT    /api/users/:email   - Actualizar usuario
- * DELETE /api/users/:email   - Eliminar usuario
  */
 
 const { app } = require("@azure/functions");
@@ -18,19 +13,41 @@ function getUsersClient() {
 }
 
 /**
- * Verifica token y extrae usuario
- * MEJORADO: Más tolerante con diferentes formatos de encoding
+ * Decodifica base64url a string
+ * Compatible con tokens generados por cualquier método
  */
-function extractUser(request) {
+function decodeBase64Url(str) {
+  // Reemplazar caracteres base64url por base64 estándar
+  let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  
+  // Agregar padding si es necesario
+  const pad = base64.length % 4;
+  if (pad) {
+    if (pad === 1) {
+      throw new Error('Invalid base64url string');
+    }
+    base64 += '='.repeat(4 - pad);
+  }
+  
+  // Decodificar
+  return Buffer.from(base64, 'base64').toString('utf-8');
+}
+
+/**
+ * Verifica token y extrae usuario
+ */
+function extractUser(request, context) {
   const authHeader = request.headers.get("authorization");
   
   if (!authHeader) {
+    context?.log("No Authorization header");
     return null;
   }
 
   const token = authHeader.replace("Bearer ", "").trim();
   
   if (!token) {
+    context?.log("Empty token");
     return null;
   }
 
@@ -38,48 +55,31 @@ function extractUser(request) {
     // Decodificar token (parte 2 = payload)
     const parts = token.split(".");
     if (parts.length !== 3) {
+      context?.log("Invalid token format - expected 3 parts, got", parts.length);
       return null;
     }
 
     const payloadB64 = parts[1];
     
-    // Intentar decodificar con diferentes métodos
-    let payloadJson;
-    try {
-      // Método 1: base64url (Node 16+)
-      payloadJson = Buffer.from(payloadB64, "base64url").toString("utf-8");
-    } catch (e) {
-      try {
-        // Método 2: base64 estándar (fallback)
-        // Primero reemplazar caracteres base64url por base64 estándar
-        const base64 = payloadB64
-          .replace(/-/g, '+')
-          .replace(/_/g, '/');
-        
-        // Agregar padding si es necesario
-        const padded = base64 + '='.repeat((4 - base64.length % 4) % 4);
-        
-        payloadJson = Buffer.from(padded, "base64").toString("utf-8");
-      } catch (e2) {
-        // Método 3: atob (último recurso para tokens muy viejos)
-        try {
-          payloadJson = atob(payloadB64);
-        } catch (e3) {
-          return null;
-        }
-      }
-    }
-
+    // Decodificar usando nuestra función compatible
+    const payloadJson = decodeBase64Url(payloadB64);
     const payload = JSON.parse(payloadJson);
+
+    context?.log("Token decoded successfully:", {
+      email: payload.email,
+      role: payload.role,
+      exp: payload.exp
+    });
 
     // Verificar expiración
     if (payload.exp && Date.now() > payload.exp) {
+      context?.log("Token expired");
       return null;
     }
 
     return payload;
   } catch (err) {
-    console.error('Error decodificando token:', err);
+    context?.error('Error decodificando token:', err.message);
     return null;
   }
 }
@@ -88,13 +88,12 @@ function extractUser(request) {
  * Middleware: solo admins
  */
 function requireAdmin(request, context) {
-  const user = extractUser(request);
+  const user = extractUser(request, context);
 
   context.log("Auth check:", {
     hasUser: !!user,
     userEmail: user?.email,
     userRole: user?.role,
-    authHeader: request.headers.get("authorization") ? "present" : "missing",
   });
 
   if (!user) {
@@ -245,7 +244,7 @@ app.http("users", {
           partitionKey: "user",
           rowKey: emailLower,
           email: emailLower,
-          password, // TODO: hashear con bcrypt en Fase 2
+          password, // TODO: hashear con bcrypt
           name: name || emailLower.split("@")[0],
           role: userRole,
           createdAt: new Date().toISOString(),
@@ -254,7 +253,7 @@ app.http("users", {
 
         await client.createEntity(newUser);
 
-        context.log("Usuario creado:", emailLower, "por", auth.user.email);
+        context.log("✅ Usuario creado:", emailLower, "por", auth.user.email);
 
         return {
           status: 201,
