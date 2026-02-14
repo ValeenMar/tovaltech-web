@@ -2,7 +2,6 @@
  * Gestión de usuarios - CRUD completo
  * Solo accesible por admins
  */
-
 const { app } = require("@azure/functions");
 const { TableClient } = require("@azure/data-tables");
 
@@ -12,113 +11,109 @@ function getUsersClient() {
   return TableClient.fromConnectionString(conn, "Users");
 }
 
-/**
- * Decodifica base64url a string
- * Compatible con tokens generados por cualquier método
- */
 function decodeBase64Url(str) {
-  // Reemplazar caracteres base64url por base64 estándar
-  let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
-  
-  // Agregar padding si es necesario
+  let base64 = String(str || "").replace(/-/g, "+").replace(/_/g, "/");
   const pad = base64.length % 4;
   if (pad) {
-    if (pad === 1) {
-      throw new Error('Invalid base64url string');
-    }
-    base64 += '='.repeat(4 - pad);
+    if (pad === 1) throw new Error("Invalid base64url string");
+    base64 += "=".repeat(4 - pad);
   }
-  
-  // Decodificar
-  return Buffer.from(base64, 'base64').toString('utf-8');
+  return Buffer.from(base64, "base64").toString("utf-8");
+}
+
+function stripQuotes(s) {
+  const v = String(s || "").trim();
+  return v.replace(/^"+|"+$/g, "");
 }
 
 /**
- * Verifica token y extrae usuario
+ * SWA puede ignorar/sobrescribir Authorization.
+ * Preferimos un header custom para el token.
  */
-function extractUser(request, context) {
-  const authHeader = request.headers.get("authorization");
-  
-  if (!authHeader) {
-    context?.log("No Authorization header");
-    return null;
+function getTokenFromRequest(request, context) {
+  // 1) Header custom (recomendado)
+  const custom =
+    request.headers.get("x-tovaltech-token") ||
+    request.headers.get("x-tt-token") ||
+    request.headers.get("x-auth-token");
+
+  if (custom) return stripQuotes(custom);
+
+  // 2) Authorization (fallback: local / otros hosts)
+  const auth = request.headers.get("authorization") || request.headers.get("Authorization");
+  if (auth) {
+    const token = auth.replace(/^bearer\s+/i, "");
+    return stripQuotes(token);
   }
 
-  const token = authHeader.replace("Bearer ", "").trim();
-  
-  if (!token) {
-    context?.log("Empty token");
-    return null;
+  // 3) Query param (solo para debug puntual)
+  try {
+    const url = new URL(request.url);
+    const q = url.searchParams.get("token");
+    if (q) return stripQuotes(q);
+  } catch {
+    // ignore
   }
+
+  context?.log?.("No auth token found in headers");
+  return null;
+}
+
+function extractUser(request, context) {
+  const token = getTokenFromRequest(request, context);
+  if (!token) return null;
 
   try {
-    // Decodificar token (parte 2 = payload)
     const parts = token.split(".");
     if (parts.length !== 3) {
-      context?.log("Invalid token format - expected 3 parts, got", parts.length);
+      context?.log?.("Invalid token format - expected 3 parts, got", parts.length);
       return null;
     }
 
-    const payloadB64 = parts[1];
-    
-    // Decodificar usando nuestra función compatible
-    const payloadJson = decodeBase64Url(payloadB64);
+    const payloadJson = decodeBase64Url(parts[1]);
     const payload = JSON.parse(payloadJson);
 
-    context?.log("Token decoded successfully:", {
-      email: payload.email,
-      role: payload.role,
-      exp: payload.exp
-    });
-
-    // Verificar expiración
     if (payload.exp && Date.now() > payload.exp) {
-      context?.log("Token expired");
+      context?.log?.("Token expired");
       return null;
     }
 
     return payload;
   } catch (err) {
-    context?.error('Error decodificando token:', err.message);
+    context?.error?.("Error decodificando token:", err?.message || err);
     return null;
   }
 }
 
-/**
- * Middleware: solo admins
- */
 function requireAdmin(request, context) {
   const user = extractUser(request, context);
 
-  context.log("Auth check:", {
+  context?.log?.("Auth check:", {
     hasUser: !!user,
     userEmail: user?.email,
     userRole: user?.role,
   });
 
   if (!user) {
-    context.log("❌ No user found in token");
     return {
       status: 403,
       jsonBody: {
         ok: false,
-        error: "No autenticado. Por favor ingresá de nuevo.",
+        error: "No autenticado.\nPor favor ingresá de nuevo.",
       },
     };
   }
 
   if (user.role !== "admin") {
-    context.log("❌ User is not admin:", user.email, user.role);
     return {
       status: 403,
       jsonBody: {
         ok: false,
-        error: `Acceso denegado. Tu rol es: ${user.role}. Se requiere: admin.`,
+        error: `Acceso denegado. Tu rol es: ${user.role}.\nSe requiere: admin.`,
       },
     };
   }
 
-  context.log("✅ Admin access granted:", user.email);
   return { ok: true, user };
 }
 
@@ -129,15 +124,13 @@ app.http("users", {
   handler: async (request, context) => {
     try {
       const client = getUsersClient();
-
-      // Verificar que sea admin
       const auth = requireAdmin(request, context);
       if (!auth.ok) return auth;
 
       const method = request.method;
       const emailParam = request.params?.email;
 
-      // ===== GET: Listar usuarios =====
+      // GET: listar usuarios
       if (method === "GET" && !emailParam) {
         const users = [];
         const iter = client.listEntities({
@@ -155,20 +148,14 @@ app.http("users", {
         }
 
         users.sort((a, b) => a.email.localeCompare(b.email));
-
-        context.log("Usuarios listados por:", auth.user.email);
-
-        return {
-          status: 200,
-          jsonBody: { ok: true, users },
-        };
+        return { status: 200, jsonBody: { ok: true, users } };
       }
 
-      // ===== GET: Obtener usuario específico =====
+      // GET: un usuario
       if (method === "GET" && emailParam) {
+        const emailLower = emailParam.toLowerCase();
         try {
-          const entity = await client.getEntity("user", emailParam.toLowerCase());
-          
+          const entity = await client.getEntity("user", emailLower);
           return {
             status: 200,
             jsonBody: {
@@ -183,68 +170,48 @@ app.http("users", {
           };
         } catch (err) {
           if (err.statusCode === 404) {
-            return {
-              status: 404,
-              jsonBody: { ok: false, error: "Usuario no encontrado" },
-            };
+            return { status: 404, jsonBody: { ok: false, error: "Usuario no encontrado" } };
           }
           throw err;
         }
       }
 
-      // ===== POST: Crear usuario =====
+      // POST: crear usuario
       if (method === "POST") {
         const body = await request.json();
-        const { email, password, name, role } = body;
+        const { email, password, name, role } = body || {};
 
-        // Validaciones
         if (!email || !password) {
-          return {
-            status: 400,
-            jsonBody: { ok: false, error: "Email y password requeridos" },
-          };
+          return { status: 400, jsonBody: { ok: false, error: "Email y password requeridos" } };
         }
 
-        const emailLower = email.toLowerCase().trim();
-
-        // Validar email
+        const emailLower = String(email).toLowerCase().trim();
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailLower)) {
-          return {
-            status: 400,
-            jsonBody: { ok: false, error: "Email inválido" },
-          };
+          return { status: 400, jsonBody: { ok: false, error: "Email inválido" } };
         }
 
-        // Validar rol
         const validRoles = ["admin", "vendor", "customer"];
         const userRole = role || "customer";
         if (!validRoles.includes(userRole)) {
           return {
             status: 400,
-            jsonBody: {
-              ok: false,
-              error: `Rol inválido. Debe ser: ${validRoles.join(", ")}`,
-            },
+            jsonBody: { ok: false, error: `Rol inválido.\nDebe ser: ${validRoles.join(", ")}` },
           };
         }
 
-        // Verificar si ya existe
+        // exists?
         try {
           await client.getEntity("user", emailLower);
-          return {
-            status: 409,
-            jsonBody: { ok: false, error: "El usuario ya existe" },
-          };
+          return { status: 409, jsonBody: { ok: false, error: "El usuario ya existe" } };
         } catch (err) {
           if (err.statusCode !== 404) throw err;
         }
 
-        // Crear usuario
         const newUser = {
           partitionKey: "user",
           rowKey: emailLower,
           email: emailLower,
-          password, // TODO: hashear con bcrypt
+          password, // TODO: bcrypt
           name: name || emailLower.split("@")[0],
           role: userRole,
           createdAt: new Date().toISOString(),
@@ -253,43 +220,31 @@ app.http("users", {
 
         await client.createEntity(newUser);
 
-        context.log("✅ Usuario creado:", emailLower, "por", auth.user.email);
-
         return {
           status: 201,
           jsonBody: {
             ok: true,
-            user: {
-              email: newUser.email,
-              name: newUser.name,
-              role: newUser.role,
-            },
+            user: { email: newUser.email, name: newUser.name, role: newUser.role },
           },
         };
       }
 
-      // ===== PUT: Actualizar usuario =====
+      // PUT: update usuario
       if (method === "PUT" && emailParam) {
-        const body = await request.json();
-        const { name, role, password } = body;
-
         const emailLower = emailParam.toLowerCase();
+        const body = await request.json();
+        const { name, role, password } = body || {};
 
-        // Obtener usuario actual
         let existing;
         try {
           existing = await client.getEntity("user", emailLower);
         } catch (err) {
           if (err.statusCode === 404) {
-            return {
-              status: 404,
-              jsonBody: { ok: false, error: "Usuario no encontrado" },
-            };
+            return { status: 404, jsonBody: { ok: false, error: "Usuario no encontrado" } };
           }
           throw err;
         }
 
-        // Actualizar campos
         const updated = {
           ...existing,
           name: name !== undefined ? name : existing.name,
@@ -301,63 +256,42 @@ app.http("users", {
 
         await client.updateEntity(updated, "Merge");
 
-        context.log("Usuario actualizado:", emailLower, "por", auth.user.email);
-
         return {
           status: 200,
           jsonBody: {
             ok: true,
             user: {
               email: updated.email || emailLower,
-              name: updated.name,
-              role: updated.role,
+              name: updated.name || "",
+              role: updated.role || "customer",
             },
           },
         };
       }
 
-      // ===== DELETE: Eliminar usuario =====
+      // DELETE: borrar usuario
       if (method === "DELETE" && emailParam) {
         const emailLower = emailParam.toLowerCase();
 
-        // Prevenir que se elimine a sí mismo
         if (emailLower === auth.user.email) {
-          return {
-            status: 400,
-            jsonBody: { ok: false, error: "No podés eliminarte a vos mismo" },
-          };
+          return { status: 400, jsonBody: { ok: false, error: "No podés eliminarte a vos mismo" } };
         }
 
         try {
           await client.deleteEntity("user", emailLower);
-          context.log("Usuario eliminado:", emailLower, "por", auth.user.email);
-
-          return {
-            status: 200,
-            jsonBody: { ok: true, message: "Usuario eliminado" },
-          };
+          return { status: 200, jsonBody: { ok: true, message: "Usuario eliminado" } };
         } catch (err) {
           if (err.statusCode === 404) {
-            return {
-              status: 404,
-              jsonBody: { ok: false, error: "Usuario no encontrado" },
-            };
+            return { status: 404, jsonBody: { ok: false, error: "Usuario no encontrado" } };
           }
           throw err;
         }
       }
 
-      // Método no soportado
-      return {
-        status: 405,
-        jsonBody: { ok: false, error: "Método no permitido" },
-      };
+      return { status: 405, jsonBody: { ok: false, error: "Método no permitido" } };
     } catch (error) {
-      context.error("Error en /api/users:", error);
-      return {
-        status: 500,
-        jsonBody: { ok: false, error: "Error interno del servidor" },
-      };
+      context?.error?.("Error en /api/users:", error);
+      return { status: 500, jsonBody: { ok: false, error: "Error interno del servidor" } };
     }
   },
 });

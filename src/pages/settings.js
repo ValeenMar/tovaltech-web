@@ -208,7 +208,9 @@ export function wireSettings() {
         method,
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          "x-tovaltech-token": token,
+Authorization: `Bearer ${token}` // (dejalo como fallback local)
+,
         },
         body: JSON.stringify(body),
       });
