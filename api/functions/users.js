@@ -19,6 +19,7 @@ function getUsersClient() {
 
 /**
  * Verifica token y extrae usuario
+ * MEJORADO: Más tolerante con diferentes formatos de encoding
  */
 function extractUser(request) {
   const authHeader = request.headers.get("authorization");
@@ -41,7 +42,34 @@ function extractUser(request) {
     }
 
     const payloadB64 = parts[1];
-    const payloadJson = Buffer.from(payloadB64, "base64url").toString("utf-8");
+    
+    // Intentar decodificar con diferentes métodos
+    let payloadJson;
+    try {
+      // Método 1: base64url (Node 16+)
+      payloadJson = Buffer.from(payloadB64, "base64url").toString("utf-8");
+    } catch (e) {
+      try {
+        // Método 2: base64 estándar (fallback)
+        // Primero reemplazar caracteres base64url por base64 estándar
+        const base64 = payloadB64
+          .replace(/-/g, '+')
+          .replace(/_/g, '/');
+        
+        // Agregar padding si es necesario
+        const padded = base64 + '='.repeat((4 - base64.length % 4) % 4);
+        
+        payloadJson = Buffer.from(padded, "base64").toString("utf-8");
+      } catch (e2) {
+        // Método 3: atob (último recurso para tokens muy viejos)
+        try {
+          payloadJson = atob(payloadB64);
+        } catch (e3) {
+          return null;
+        }
+      }
+    }
+
     const payload = JSON.parse(payloadJson);
 
     // Verificar expiración
@@ -51,6 +79,7 @@ function extractUser(request) {
 
     return payload;
   } catch (err) {
+    console.error('Error decodificando token:', err);
     return null;
   }
 }
