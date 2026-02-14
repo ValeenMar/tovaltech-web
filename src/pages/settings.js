@@ -260,7 +260,10 @@ export function wireSettings() {
       }
 
       const res = await fetch("/api/users", {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          "x-tovaltech-token": token,
+          Authorization: `Bearer ${token}`,
+        },
       });
 
       const data = await res.json();
@@ -381,7 +384,10 @@ export function wireSettings() {
 
       const res = await fetch(`/api/users/${encodeURIComponent(email)}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          "x-tovaltech-token": token,
+          Authorization: `Bearer ${token}`,
+        },
       });
 
       const data = await res.json();
