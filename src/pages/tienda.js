@@ -389,7 +389,7 @@ export function wireTienda() {
       `💰 Precio: ${p.precioFinal !== null ? formatMoney(p.precioFinal, "ARS") : "Consultar"}\n\n` +
       `¿Está disponible?`
     );
-    window.open(`https://wa.me/${tel:5491123413674}?text=${msg}`, "_blank");
+    window.open(`https://wa.me/${tel}?text=${msg}`, "_blank");
   }
 
   function consultarEmail(p) {
