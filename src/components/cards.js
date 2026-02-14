@@ -30,9 +30,12 @@ export function renderProductCards({ rows, providerName, formatMoney }) {
         const prov = providerName(r.providerId);
         const img = r.image || r.imageUrl || "";
 
-        const media = img
-          ? `<img class="pImg" src="${esc(img)}" alt="${esc(title)}" loading="lazy" />`
-          : `<div class="pPh">${esc(initials(brand !== "-" ? brand : title))}</div>`;
+        const ph = `<div class="pPh">${esc(initials(brand !== "-" ? brand : title))}</div>`;
+
+        const media = `
+          ${ph}
+          ${img ? `<img class="pImg" src="${esc(img)}" alt="${esc(title)}" loading="lazy" onerror="this.remove()" />` : ""}
+        `;
 
         return `
           <div class="pCard">

@@ -1,67 +1,59 @@
-# TovalTech - Log interno
+# TovalTech - Internal Log (único archivo)
 
-## Regla (obligatoria)
-- Este log vive en: `/_internal/LOG.md`.
-- Cada vez que hagamos un cambio en el repo, agregá una entrada nueva arriba (debajo de “Últimas entradas”).
-- Cada entrada debe incluir: **qué se cambió**, **por qué**, **archivos tocados**, **pasos para verificar**, y **cómo revertir**.
-- Formato recomendado: el mismo que ya uso en las entradas de este archivo.
+Reglas:
+- Cada vez que ChatGPT te dé cambios, pegás el bloque "Entrada de log" al final de este archivo.
+- No se reescribe el pasado. Si algo quedó mal, se agrega una nueva entrada corrigiendo.
+- Cada entrada debe tener: fecha, objetivo, cambios exactos (archivos), cómo verificar, y próximos pasos.
 
 ---
 
-## Últimas entradas
+## 2026-02-14 04:04 UTC - Fix API + preparar soporte de imágenes (ELIT)
 
-### 2026-02-14 - Arreglo de API (ELIT/Providers/Products) y diagnóstico
-**Problema**
-- La web caía a **MOCK** (no aparecía ELIT) porque el llamado a `/api/getProviders` y/o `/api/getProducts` fallaba.
+Objetivo:
+- Preparar el sistema para mostrar imágenes si ELIT trae URLs.
+- Normalizar moneda para que no aparezca "2" en el catálogo.
 
-**Causa raíz**
-- `api/functions/providersElitImport.js` tenía código suelto al final del archivo (fuera de cualquier función) que referenciaba variables inexistentes. Eso puede romper la carga del runtime de Functions.
-
-**Cambios**
-- Se eliminó el código suelto al final de `providersElitImport.js`.
-- Se agregó soporte opcional de `imageUrl` dentro del import de ELIT.
-- Se creó endpoint de salud: `/api/health` para validar variables de entorno y acceso a tablas.
-- Se mejoró el reporting de errores en `/api/getProviders` y `/api/getProducts` (devuelven `error` real).
-- Se mejoró el front para mostrar el motivo cuando cae a MOCK.
-
-**Archivos tocados**
+Cambios (archivos):
 - `api/functions/providersElitImport.js`
-- `api/functions/health.js` (nuevo)
-- `api/index.js`
-- `api/functions/getProviders.js`
+  - Agregado `pickImageUrl()` para guardar `imageUrl` en la tabla `Products`.
+  - Agregado `normalizeCurrency()` para convertir valores numéricos (ej: "2") a ISO ("ARS").
+  - Limpieza del archivo (sin código suelto fuera del handler).
 - `api/functions/getProducts.js`
-- `src/pages/catalogo.js`
-- `src/pages/proveedores.js`
+  - Normaliza `currency` a ISO con `normalizeCurrency()`.
+- `src/components/cards.js`
+  - Siempre renderiza placeholder y, si hay imagen, muestra `<img>` encima.
+  - Si la imagen falla, se elimina y queda el placeholder.
+- `src/styles/global.css`
+  - `.pMedia` pasó a `position:relative` y `.pImg/.pPh` a overlay absoluto.
 
-**Verificación (pasos exactos)**
-1) Abrir en el browser: `/api/health`
-   - Debe dar `ok: true`.
-   - Debe marcar `tables.products/providers/chat = true`.
-2) Abrir: `/api/getProviders`
-   - Debe devolver `ok: true` y una lista que incluya `elit`.
-3) Abrir: `/catalogo`
-   - Debe mostrar `Datos: API` y el selector de proveedores con `ELIT`.
-   - Debe mostrar productos si hay datos en la tabla `Products`.
+Cómo verificar:
+1) Debug de campos reales de ELIT:
+   - Abrir: `/api/providersElitImport?debug=1&limit=10`
+   - Ver si en `keys` o en `sample.resultado` existe algún campo con URL de imagen.
+2) Import completo:
+   - Abrir: `/api/providersElitImport?all=1&limit=100&offset=1`
+3) Validar API:
+   - Abrir: `/api/getProducts?provider=elit&limit=200`
+   - Confirmar que `currency` sea "ARS"/"USD" (no números).
+   - Confirmar que `image` o `imageUrl` no sea null si ELIT trae imágenes.
+4) Validar UI:
+   - Ir a `/catalogo`
+   - Si hay URLs, deben aparecer imágenes en cards.
 
-**Revertir**
-- Revertir commit que introduce estos cambios o restaurar versiones previas de los archivos listados.
+Próximos pasos:
+- Si ELIT NO trae imágenes: definir estrategia (manual mapping, Blob Storage propio, o dejar placeholders).
+- Implementar paginación real (cursor) para no cargar miles en una sola respuesta.
 
 ---
 
-## Checklist rápido de salud (cada vez que “no aparece ELIT”)
-1) `/api/health`
-2) `/api/getProviders`
-3) `/api/getProducts?provider=elit&limit=5`
-4) Ver consola del browser en `/catalogo` (si cae a MOCK ahora debería mostrar el motivo).
+### Entrada de log (plantilla para copiar/pegar)
 
-## Notas de variables de entorno (Azure Static Web Apps)
-- Requeridas (API):
-  - `STORAGE_CONNECTION_STRING`
-  - `CHAT_TABLE_NAME` (si no, usa `chatlog`)
-  - `PRODUCTS_TABLE_NAME` (si no, usa `Products`)
-  - `PROVIDERS_TABLE_NAME` (si no, usa `Providers`)
-- Para import de ELIT:
-  - `ELIT_USER_ID`
-  - `ELIT_TOKEN`
-- Para login:
-  - `APP_PASSWORD`
+## AAAA-MM-DD HH:MM UTC - Título
+
+Objetivo:
+
+Cambios (archivos):
+
+Cómo verificar:
+
+Notas / Próximos pasos:

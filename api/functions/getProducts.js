@@ -10,14 +10,15 @@ function getClient() {
   return TableClient.fromConnectionString(conn, tableName);
 }
 
-function escapeODataString(s) {
-  return String(s).replace(/'/g, "''");
-}
-
 function toNumber(v) {
   if (v === null || v === undefined || v === "") return null;
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
 
+  // Soporta formatos tipo:
+  //  - 2167.68
+  //  - 2.167,68
+  //  - 2 167,68
+  //  - 2,167.68
   let s = String(v).trim();
   if (!s) return null;
   s = s.replace(/\s+/g, "");
@@ -40,6 +41,16 @@ function toNumber(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+
+function normalizeCurrency(v) {
+  const s = String(v ?? "").trim();
+  if (!s) return "ARS";
+  if (s === "1") return "USD";
+  if (s === "2") return "ARS";
+  if (/^[A-Za-z]{3}$/.test(s)) return s.toUpperCase();
+  return "ARS";
+}
+
 app.http("getProducts", {
   methods: ["GET"],
   authLevel: "anonymous",
@@ -50,43 +61,37 @@ app.http("getProducts", {
 
       const provider = (url.searchParams.get("provider") || "").trim();
       const q = (url.searchParams.get("q") || "").trim().toLowerCase();
-
-      const rawLimit = Number(url.searchParams.get("limit") || 500);
-      const limit = Number.isFinite(rawLimit)
-        ? Math.max(1, Math.min(5000, Math.floor(rawLimit)))
-        : 500;
-
-      const filter = provider ? `PartitionKey eq '${escapeODataString(provider)}'` : undefined;
+      const limit = Math.max(1, Math.min(5000, Number(url.searchParams.get("limit") || 500)));
 
       const items = [];
-      const pageSize = 1000;
+      const filter = provider ? `PartitionKey eq '${provider.replace(/'/g, "''")}'` : undefined;
 
-      const listOpts = filter ? { queryOptions: { filter } } : {};
-      const pager = client.listEntities(listOpts).byPage({ maxPageSize: pageSize });
+      const iter = client.listEntities({
+        queryOptions: { filter, top: limit },
+      });
 
-      outer: for await (const page of pager) {
-        for (const e of page) {
-          const row = {
-            sku: e.sku || e.rowKey,
-            providerId: e.providerId || e.partitionKey,
-            name: e.name || "",
-            brand: e.brand || "",
-            price: toNumber(e.price),
-            currency: e.currency || "USD",
-            image: e.image || e.imageUrl || null,
-          };
+      for await (const e of iter) {
+        const row = {
+          sku: e.sku || e.rowKey,
+          providerId: e.providerId || e.partitionKey,
+          name: e.name || "",
+          brand: e.brand || "",
+          price: toNumber(e.price),
+          currency: normalizeCurrency(e.currency || "ARS"),
+          // opcional (si en el futuro lo guardamos):
+          image: e.image || e.imageUrl || null,
+        };
 
-          if (q) {
-            const hay =
-              String(row.sku).toLowerCase().includes(q) ||
-              String(row.name).toLowerCase().includes(q) ||
-              String(row.brand).toLowerCase().includes(q);
-            if (!hay) continue;
-          }
-
-          items.push(row);
-          if (items.length >= limit) break outer;
+        if (q) {
+          const hay =
+            String(row.sku).toLowerCase().includes(q) ||
+            String(row.name).toLowerCase().includes(q) ||
+            String(row.brand).toLowerCase().includes(q);
+          if (!hay) continue;
         }
+
+        items.push(row);
+        if (items.length >= limit) break;
       }
 
       return { status: 200, jsonBody: { ok: true, items } };

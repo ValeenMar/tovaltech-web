@@ -1,20 +1,27 @@
 // File: /api/functions/providersElitImport.js
-// CommonJS (require) para ser compatible con /api/index.js
+// Importador de productos desde ELIT -> Azure Table Storage (Products)
+// Usage:
+//   /api/providersElitImport?debug=1&limit=10
+//   /api/providersElitImport?pages=5&limit=100&offset=1
+//   /api/providersElitImport?all=1&limit=100&offset=1
+//
+// Nota: usa CommonJS (require) para ser compatible con /api/index.js
 const { app } = require("@azure/functions");
 const { TableClient } = require("@azure/data-tables");
 
-function getProductsClient() {
+function getTableClient(envName, fallbackName) {
   const conn = process.env.STORAGE_CONNECTION_STRING;
-  const tableName = process.env.PRODUCTS_TABLE_NAME || "Products";
+  const tableName = process.env[envName] || fallbackName;
   if (!conn) throw new Error("Missing STORAGE_CONNECTION_STRING");
   return TableClient.fromConnectionString(conn, tableName);
 }
 
+function getProductsClient() {
+  return getTableClient("PRODUCTS_TABLE_NAME", "Products");
+}
+
 function getProvidersClient() {
-  const conn = process.env.STORAGE_CONNECTION_STRING;
-  const tableName = process.env.PROVIDERS_TABLE_NAME || "Providers";
-  if (!conn) throw new Error("Missing STORAGE_CONNECTION_STRING");
-  return TableClient.fromConnectionString(conn, tableName);
+  return getTableClient("PROVIDERS_TABLE_NAME", "Providers");
 }
 
 function toNumber(v) {
@@ -48,12 +55,46 @@ function toNumber(v) {
   return Number.isFinite(n) ? n : null;
 }
 
-function pickBrand(item) {
-  return item.marca || item.brand || item.Marca || item.Brand || item.fabricante || "";
+function normalizeCurrency(v) {
+  const s = String(v ?? "").trim();
+  if (!s) return "ARS";
+
+  // ELIT a veces devuelve códigos numéricos.
+  // Ajustá este mapa si descubrís otros valores.
+  if (s === "1") return "USD";
+  if (s === "2") return "ARS";
+
+  // Ya viene como ISO (ej: "ARS", "USD")
+  if (/^[A-Za-z]{3}$/.test(s)) return s.toUpperCase();
+
+  // fallback seguro
+  return "ARS";
 }
 
 function pickSku(item) {
-  return item.sku || item.codigo || item.code || item.Codigo || item.Código || item.SKU || "";
+  return (
+    item.sku ||
+    item.codigo ||
+    item.Codigo ||
+    item.id ||
+    item.Id ||
+    item.ID ||
+    item.cod ||
+    item.COD ||
+    ""
+  );
+}
+
+function pickBrand(item) {
+  return (
+    item.marca ||
+    item.brand ||
+    item.Marca ||
+    item.Brand ||
+    item.fabricante ||
+    item.Fabricante ||
+    ""
+  );
 }
 
 function pickName(item) {
@@ -62,7 +103,7 @@ function pickName(item) {
     item.name ||
     item.descripcion ||
     item.Descripcion ||
-    item.Descripción ||
+    item["Descripción"] ||
     item.titulo ||
     item.title ||
     ""
@@ -70,8 +111,8 @@ function pickName(item) {
 }
 
 function pickCurrency(item) {
-  // ELIT es local => por defecto ARS
-  return item.moneda || item.currency || item.Currency || "ARS";
+  // ELIT es local => por defecto ARS, pero normalizamos por si viene como número.
+  return normalizeCurrency(item.moneda || item.currency || item.Currency || "ARS");
 }
 
 function pickPrice(item) {
@@ -90,16 +131,43 @@ function pickPrice(item) {
 }
 
 function pickImageUrl(item) {
-  // Intento de detectar imágenes si ELIT las provee.
-  // (No siempre vienen; queda en null si no hay.)
-  const img =
-    (Array.isArray(item?.miniaturas) && item.miniaturas[0]) ||
-    (Array.isArray(item?.imagenes) && item.imagenes[0]) ||
-    item?.image ||
-    item?.imageUrl ||
-    null;
+  // Posibles nombres comunes. Ajustá cuando veas el "debug keys".
+  const candidates = [
+    // arrays
+    Array.isArray(item?.miniaturas) ? item.miniaturas[0] : null,
+    Array.isArray(item?.imagenes) ? item.imagenes[0] : null,
+    Array.isArray(item?.images) ? item.images[0] : null,
+    // strings
+    item?.imagen,
+    item?.imagen_url,
+    item?.imagenUrl,
+    item?.url_imagen,
+    item?.urlImagen,
+    item?.foto,
+    item?.foto_url,
+    item?.image,
+    item?.imageUrl,
+    item?.thumbnail,
+    item?.thumbnailUrl,
+    item?.img,
+    item?.imgUrl,
+  ];
 
-  return img ? String(img) : null;
+  const first = candidates.find((v) => typeof v === "string" && v.trim());
+  if (first) return String(first).trim();
+
+  // Fallback: buscar cualquier string que parezca URL de imagen.
+  if (item && typeof item === "object") {
+    for (const v of Object.values(item)) {
+      if (typeof v !== "string") continue;
+      const s = v.trim();
+      if (!s) continue;
+      if (!/^https?:\/\//i.test(s)) continue;
+      if (/\.(png|jpe?g|webp|gif)(\?|#|$)/i.test(s)) return s;
+    }
+  }
+
+  return null;
 }
 
 async function elitFetchProducts({ limit = 100, offset = 1 } = {}) {
@@ -110,31 +178,19 @@ async function elitFetchProducts({ limit = 100, offset = 1 } = {}) {
     throw new Error("Missing ELIT_USER_ID / ELIT_TOKEN");
   }
 
-  const url = `https://clientes.elit.com.ar/v1/api/productos?limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`;
+  // El endpoint exacto depende de ELIT. Esta estructura es la que venías usando.
+  const api = "https://api.elit.com.ar/api/articulos/listado";
+  const url = new URL(api);
+  url.searchParams.set("usuario", ELIT_USER_ID);
+  url.searchParams.set("token", ELIT_TOKEN);
+  url.searchParams.set("cantidad", String(limit));
+  url.searchParams.set("desde", String(offset));
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user_id: Number(ELIT_USER_ID), token: ELIT_TOKEN }),
-  });
-
-  const text = await res.text();
-  let json = null;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    json = null;
-  }
-
-  if (!res.ok) {
-    const msg = json?.error || json?.message || `ELIT API error ${res.status}`;
-    const err = new Error(msg);
-    err.status = res.status;
-    err.body = json ?? text;
-    throw err;
-  }
-
-  return json;
+  const res = await fetch(url.toString(), { method: "GET" });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(`ELIT HTTP ${res.status}`);
+  if (!data) throw new Error("ELIT: no JSON");
+  return data;
 }
 
 app.http("providersElitImport", {
@@ -144,18 +200,18 @@ app.http("providersElitImport", {
     try {
       const url = new URL(request.url);
 
-      const limit = Math.max(1, Math.min(100, Number(url.searchParams.get("limit") || 100)));
+      const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit") || 100)));
       const debug = String(url.searchParams.get("debug") || "") === "1";
       const pagesParam = url.searchParams.get("pages");
       const all = String(url.searchParams.get("all") || "") === "1";
-      const pages = pagesParam ? Math.max(1, Math.min(200, Number(pagesParam))) : 1;
+      const pages = pagesParam ? Math.max(1, Math.min(400, Number(pagesParam))) : 1;
       const offsetStart = Math.max(1, Number(url.searchParams.get("offset") || 1));
 
       const providerId = "elit";
-      const client = getProductsClient();
+      const productsClient = getProductsClient();
       const providersClient = getProvidersClient();
 
-      // Garantizar provider en tabla Providers
+      // Asegurar provider en tabla Providers
       try {
         await providersClient.upsertEntity(
           {
@@ -219,7 +275,7 @@ app.http("providersElitImport", {
             imageUrl: pickImageUrl(item),
           };
 
-          await client.upsertEntity(entity);
+          await productsClient.upsertEntity(entity, "Merge");
           saved += 1;
         }
       }
@@ -228,10 +284,11 @@ app.http("providersElitImport", {
       await saveList(firstList);
 
       if (all && total) {
-        const maxPagesCap = 200;
-        const maxItemsCap = 20000;
-        let offset = offsetStart + limit;
+        // límites de seguridad (evitar timeouts)
+        const maxPagesCap = 400;
+        const maxItemsCap = 50000;
 
+        let offset = offsetStart + limit;
         while (offsetStart + seen < total && seen < maxItemsCap) {
           const resp = await elitFetchProducts({ limit, offset });
           const list = Array.isArray(resp?.resultado) ? resp.resultado : [];
@@ -265,6 +322,7 @@ app.http("providersElitImport", {
           total,
           seen,
           saved,
+          note: "Si necesitas imágenes: corre /api/providersElitImport?debug=1 y verifica qué campo trae la URL. Luego re-importa con all=1.",
         },
       };
     } catch (err) {
