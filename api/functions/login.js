@@ -1,12 +1,13 @@
 /**
- * Login endpoint con dominios autorizados
- * @toval-tech.com = admin automático
+ * Login endpoint con validación contra tabla Users
+ * Prioridad: Users table > dominios autorizados > hardcoded
  */
 
 const { app } = require("@azure/functions");
+const { TableClient } = require("@azure/data-tables");
 
-// Usuarios específicos (vendors, clientes especiales, etc)
-const SPECIFIC_USERS = [
+// Usuarios hardcoded (solo como fallback legacy)
+const FALLBACK_USERS = [
   {
     email: "vendor@ejemplo.com",
     password: "Milanesa",
@@ -15,11 +16,19 @@ const SPECIFIC_USERS = [
   },
 ];
 
-// Dominios que tienen acceso admin automático
+// Dominios que tienen acceso admin automático (legacy)
 const ADMIN_DOMAINS = ["toval-tech.com"];
-
-// Password temporal para @toval-tech.com
 const ADMIN_DEFAULT_PASSWORD = "Milanesa";
+
+function getUsersClient() {
+  const conn = process.env.STORAGE_CONNECTION_STRING;
+  if (!conn) return null;
+  try {
+    return TableClient.fromConnectionString(conn, "Users");
+  } catch {
+    return null;
+  }
+}
 
 app.http("login", {
   methods: ["POST"],
@@ -42,10 +51,56 @@ app.http("login", {
       const emailLower = email.toLowerCase().trim();
       const domain = emailLower.split("@")[1];
 
-      // CASO 1: Email de dominio admin (@toval-tech.com)
+      // PRIORIDAD 1: Buscar en tabla Users
+      const client = getUsersClient();
+      if (client) {
+        try {
+          const userEntity = await client.getEntity("user", emailLower);
+          
+          // Verificar password (TODO: bcrypt en producción)
+          if (userEntity.password === password) {
+            const token = generateToken({
+              email: userEntity.email || emailLower,
+              role: userEntity.role || "customer",
+              name: userEntity.name || emailLower.split("@")[0],
+            });
+
+            context.log("✅ Login exitoso (Users table):", emailLower, userEntity.role);
+
+            return {
+              status: 200,
+              jsonBody: {
+                success: true,
+                token,
+                user: {
+                  email: userEntity.email || emailLower,
+                  name: userEntity.name || emailLower.split("@")[0],
+                  role: userEntity.role || "customer",
+                },
+              },
+            };
+          } else {
+            context.log("❌ Password incorrecto (Users table):", emailLower);
+            return {
+              status: 401,
+              jsonBody: {
+                success: false,
+                message: "Credenciales inválidas",
+              },
+            };
+          }
+        } catch (err) {
+          // Si no existe en tabla Users, seguir con fallbacks
+          if (err.statusCode !== 404) {
+            context.error("Error al buscar usuario:", err);
+          }
+        }
+      }
+
+      // PRIORIDAD 2: Dominio admin (legacy - solo si no está en Users table)
       if (ADMIN_DOMAINS.includes(domain)) {
         if (password !== ADMIN_DEFAULT_PASSWORD) {
-          context.log("Login fallido (admin):", emailLower);
+          context.log("❌ Login fallido (admin legacy):", emailLower);
           return {
             status: 401,
             jsonBody: {
@@ -64,7 +119,7 @@ app.http("login", {
           name: displayName,
         });
 
-        context.log("Login exitoso (admin):", emailLower);
+        context.log("⚠️ Login exitoso (admin legacy - crear usuario en DB):", emailLower);
 
         return {
           status: 200,
@@ -80,30 +135,19 @@ app.http("login", {
         };
       }
 
-      // CASO 2: Usuario específico (vendor, etc)
-      const specificUser = SPECIFIC_USERS.find(
+      // PRIORIDAD 3: Usuarios hardcoded (legacy)
+      const fallbackUser = FALLBACK_USERS.find(
         (u) => u.email.toLowerCase() === emailLower
       );
 
-      if (specificUser) {
-        if (specificUser.password !== password) {
-          context.log("Login fallido (specific):", emailLower);
-          return {
-            status: 401,
-            jsonBody: {
-              success: false,
-              message: "Credenciales inválidas",
-            },
-          };
-        }
-
+      if (fallbackUser && fallbackUser.password === password) {
         const token = generateToken({
-          email: specificUser.email,
-          role: specificUser.role,
-          name: specificUser.name,
+          email: fallbackUser.email,
+          role: fallbackUser.role,
+          name: fallbackUser.name,
         });
 
-        context.log("Login exitoso (specific):", emailLower, specificUser.role);
+        context.log("⚠️ Login exitoso (fallback - crear usuario en DB):", emailLower);
 
         return {
           status: 200,
@@ -111,16 +155,16 @@ app.http("login", {
             success: true,
             token,
             user: {
-              email: specificUser.email,
-              name: specificUser.name,
-              role: specificUser.role,
+              email: fallbackUser.email,
+              name: fallbackUser.name,
+              role: fallbackUser.role,
             },
           },
         };
       }
 
-      // CASO 3: Usuario no autorizado
-      context.log("Login fallido (unauthorized):", emailLower);
+      // Usuario no autorizado
+      context.log("❌ Login fallido (unauthorized):", emailLower);
       return {
         status: 401,
         jsonBody: {
@@ -129,7 +173,7 @@ app.http("login", {
         },
       };
     } catch (error) {
-      context.error("Error en login:", error);
+      context.error("💥 Error en login:", error);
       return {
         status: 500,
         jsonBody: {

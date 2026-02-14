@@ -189,7 +189,7 @@ app.http("getProducts", {
       const q = qRaw.toLowerCase();
 
       let limit = toNumber(request.query.get("limit"));
-      if (!limit || limit < 1) limit = 100;
+      if (!limit || limit < 1) limit = 5000; // Cambiado de 100 a 5000 para mostrar más productos por default
       if (limit > 20000) limit = 20000;
 
       // IMPORTANTE (tu esquema real):

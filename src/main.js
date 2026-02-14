@@ -8,6 +8,7 @@ import { ChatPage, wireChat } from "./pages/chat.js";
 import { NosotrosPage, wireNosotros } from "./pages/nosotros.js";
 import { ContactoPage, wireContacto } from "./pages/contacto.js";
 import { SettingsPage, wireSettings } from "./pages/settings.js";
+import { TiendaPage, wireTienda } from "./pages/tienda.js";
 
 const app = document.querySelector("#app");
 
@@ -45,6 +46,7 @@ const routes = {
   `,
 
   "/catalogo": CatalogoPage,
+  "/tienda": TiendaPage,
   "/proveedores": ProveedoresPage,
   "/nosotros": NosotrosPage,
   "/contacto": ContactoPage,
@@ -326,6 +328,7 @@ function render() {
   wireNavSearchSmart();
 
   if (path === "/catalogo") wireCatalogo(app, params.get("q") || "");
+  if (path === "/tienda") wireTienda();
   if (path === "/proveedores") wireProveedores();
   if (path === "/chat") wireChat();
   if (path === "/nosotros") wireNosotros();
