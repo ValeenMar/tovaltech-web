@@ -165,7 +165,33 @@ export function wireSettings() {
     saveUserBtn.textContent = "Guardando...";
 
     try {
-      const token = localStorage.getItem(AUTH_KEY);
+      // Intentar obtener el token de localStorage
+      let token = localStorage.getItem(AUTH_KEY);
+      
+      // DEBUGGING: Ver si el token existe
+      console.log('🔍 AUTH_KEY:', AUTH_KEY);
+      console.log('🔍 Token desde AUTH_KEY:', token ? 'Existe' : 'NO existe');
+      
+      // Fallback: intentar con la key hardcoded por si AUTH_KEY está mal
+      if (!token) {
+        console.warn('⚠️ No hay token con AUTH_KEY, intentando con "tovaltech_auth"');
+        token = localStorage.getItem('tovaltech_auth');
+      }
+      
+      // Si sigue sin token, intentar con _v1
+      if (!token) {
+        console.warn('⚠️ Intentando con "tovaltech_auth_v1"');
+        token = localStorage.getItem('tovaltech_auth_v1');
+      }
+
+      if (!token) {
+        modalError.textContent = "No hay token de autenticación. Por favor cerrá sesión y volvé a entrar.";
+        console.error('❌ No se encontró token en ninguna key');
+        return;
+      }
+
+      console.log('✅ Token encontrado, length:', token.length);
+
       const method = editingEmail ? "PUT" : "POST";
       const url = editingEmail
         ? `/api/users/${encodeURIComponent(editingEmail)}`
@@ -173,6 +199,10 @@ export function wireSettings() {
 
       const body = { email, name, role };
       if (password) body.password = password;
+
+      console.log('📤 Enviando petición:', method, url);
+      console.log('📦 Body:', body);
+      console.log('🔑 Token preview:', token.substring(0, 50) + '...');
 
       const res = await fetch(url, {
         method,
@@ -183,18 +213,23 @@ export function wireSettings() {
         body: JSON.stringify(body),
       });
 
+      console.log('📥 Respuesta HTTP:', res.status, res.statusText);
+
       const data = await res.json();
+      console.log('📥 Respuesta data:', data);
 
       if (!res.ok || !data.ok) {
         modalError.textContent = data.error || `Error: ${res.status}`;
+        console.error('❌ Error en respuesta:', data);
         return;
       }
 
+      console.log('✅ Usuario guardado exitosamente');
       closeModal();
       loadUsers();
     } catch (err) {
-      modalError.textContent = "Error de conexión";
-      console.error(err);
+      modalError.textContent = "Error de conexión: " + err.message;
+      console.error('❌ Error de conexión:', err);
     } finally {
       saveUserBtn.disabled = false;
       saveUserBtn.textContent = "Guardar";
@@ -206,7 +241,10 @@ export function wireSettings() {
     usersList.innerHTML = '<div class="loading">Cargando usuarios...</div>';
 
     try {
-      const token = localStorage.getItem(AUTH_KEY);
+      // Intentar obtener el token con fallback
+      let token = localStorage.getItem(AUTH_KEY);
+      if (!token) token = localStorage.getItem('tovaltech_auth');
+      if (!token) token = localStorage.getItem('tovaltech_auth_v1');
       
       if (!token) {
         usersList.innerHTML = `
@@ -334,7 +372,10 @@ export function wireSettings() {
     if (!confirm(`¿Eliminar usuario ${email}?`)) return;
 
     try {
-      const token = localStorage.getItem(AUTH_KEY);
+      let token = localStorage.getItem(AUTH_KEY);
+      if (!token) token = localStorage.getItem('tovaltech_auth');
+      if (!token) token = localStorage.getItem('tovaltech_auth_v1');
+
       const res = await fetch(`/api/users/${encodeURIComponent(email)}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
