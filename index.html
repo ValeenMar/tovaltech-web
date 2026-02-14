@@ -1,0 +1,59 @@
+<!-- File: /index.html -->
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#050607" />
+    <title>TovalTech</title>
+    <link rel="stylesheet" href="/src/styles/global.css" />
+  </head>
+
+  <body>
+    <header class="topbar">
+      <div class="topbarInner container">
+        <a class="brand" href="/" data-link aria-label="TovalTech">
+          <img
+            src="/assets/tovaltech.png"
+            onerror="this.onerror=null;this.src='/src/assets/tovaltech.png';"
+            alt="TovalTech"
+            class="brandLogo"
+          />
+        </a>
+
+        <nav class="nav" aria-label="Navegación">
+          <a href="/" data-link>Home</a>
+          <a href="/catalogo" data-link>Productos</a>
+          <a href="/proveedores" data-link>Proveedores</a>
+          <a href="/nosotros" data-link>Nosotros</a>
+          <a href="/contacto" data-link>Contacto</a>
+
+          <form id="navSearch" class="navSearch" autocomplete="off">
+            <span class="navSearchIcon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Zm6.2-1.3L21 21"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                />
+              </svg>
+            </span>
+            <input id="navQ" class="navSearchInput" placeholder="buscar" />
+            <div id="navSuggest" class="navSuggest" hidden></div>
+          </form>
+
+          <!-- Admin-only -->
+          <a href="/chat" data-link data-auth="admin">Jeffrey</a>
+
+          <a href="/login" data-link data-auth="login">Login</a>
+          <a href="/logout" data-link data-auth="logout">Logout</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="container main">
+      <div id="app"></div>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
