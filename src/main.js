@@ -290,7 +290,7 @@ function render() {
   updateNavUI();
   wireNavSearchSmart();
 
-  if (path === "/catalogo") wireCatalogo(params.get("q") || "");
+  if (path === "/catalogo") wireCatalogo(app, params.get("q") || "");
   if (path === "/proveedores") wireProveedores();
   if (path === "/chat") wireChat();
   if (path === "/nosotros") wireNosotros();

@@ -229,10 +229,25 @@ export function CatalogoPage() {
   `;
 }
 
-export function wireCatalogo(root) {
+export function wireCatalogo(rootOrQuery, maybeQuery = "") {
+  // Compat:
+  // - old main.js called wireCatalogo(queryString)
+  // - new versions can call wireCatalogo(rootElement, queryString)
+  let root = document;
+  let initialQ = "";
+
+  if (rootOrQuery && typeof rootOrQuery.querySelector === "function") {
+    root = rootOrQuery;
+    initialQ = typeof maybeQuery === "string" ? maybeQuery : "";
+  } else {
+    root = document;
+    initialQ = typeof rootOrQuery === "string" ? rootOrQuery : "";
+  }
+
   const mount = root.querySelector("#productsList");
   const provSel = root.querySelector("#provSel");
   const qInput = root.querySelector("#q");
+  if (qInput && initialQ) qInput.value = initialQ;
   const countPill = root.querySelector("#countPill");
   const catSource = root.querySelector("#catSource");
   const fxInput = root.querySelector("#fxUsdArs");
