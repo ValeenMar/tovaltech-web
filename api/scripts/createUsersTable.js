@@ -1,99 +1,56 @@
 /**
- * Script para crear tabla Users y usuarios iniciales
- * Ejecutar UNA VEZ: node api/scripts/createUsersTable.js
- */
-
-const { TableClient } = require("@azure/data-tables");
-require("dotenv").config();
-
-async function setup() {
-  const conn = process.env.STORAGE_CONNECTION_STRING;
-  if (!conn) {
-    console.error("❌ STORAGE_CONNECTION_STRING no configurado");
-    process.exit(1);
-  }
-
-  const client = TableClient.fromConnectionString(conn, "Users");
-
-  // Crear tabla
-  try {
-    await client.createTable();
-    console.log("✅ Tabla Users creada");
-  } catch (err) {
-    if (err.statusCode === 409) {
-      console.log("ℹ️  Tabla Users ya existe");
-    } else {
-      throw err;
-    }
-  }
-
-  // Crear usuarios iniciales
-  const users = [
-    {
-      partitionKey: "user",
-      rowKey: "admin@tovaltech.com", // TU EMAIL
-      email: "admin@tovaltech.com",
-      password: "Milanesa", // CAMBIAR
-      name: "Admin TovalTech",
-      role: "admin",
-      createdAt: new Date().toISOString(),
-    },
-    {
-      partitionKey: "user",
-      rowKey: "tobias@tovaltech.com", // EMAIL DE TOBIAS
-      email: "tobias@tovaltech.com",
-      password: "Milanesa", // CAMBIAR
-      name: "Tobias",
-      role: "admin",
-      createdAt: new Date().toISOString(),
-    },
-  ];
-
-  for (const user of users) {
-    try {
-      await client.upsertEntity(user, "Merge");
-      console.log(`✅ Usuario creado: ${user.email} (${user.role})`);
-    } catch (err) {
-      console.error(`❌ Error creando ${user.email}:`, err.message);
-    }
-  }
-
-  console.log("\n🎉 Setup completo. Ya podés hacer login.");
-}
-
-setup().catch(console.error);
-
-/**
  * Script para crear tabla Users
- * Ejecutar UNA VEZ: node api/scripts/createUsersTable.js
+ * Ejecutar: node api/scripts/createUsersTable.js
  */
 
 const { TableClient } = require("@azure/data-tables");
 
+// Cargar variables de entorno si existe .env
+try {
+  require("dotenv").config({ path: require("path").join(__dirname, "../.env") });
+} catch {
+  // No hay dotenv, usar variables de sistema
+}
+
 async function setup() {
   const conn = process.env.STORAGE_CONNECTION_STRING;
+  
   if (!conn) {
-    console.error("❌ Set STORAGE_CONNECTION_STRING en .env o variables de entorno");
+    console.error("\n❌ ERROR: STORAGE_CONNECTION_STRING no está configurado\n");
+    console.log("Opciones para configurarlo:\n");
+    console.log("1) Crear archivo api/.env con:");
+    console.log("   STORAGE_CONNECTION_STRING=tu_connection_string\n");
+    console.log("2) O ejecutar:");
+    console.log('   $env:STORAGE_CONNECTION_STRING = "tu_connection_string"');
+    console.log("   node api/scripts/createUsersTable.js\n");
     process.exit(1);
   }
 
-  const client = TableClient.fromConnectionString(conn, "Users");
-
-  // Crear tabla
   try {
-    await client.createTable();
-    console.log("✅ Tabla Users creada");
-  } catch (err) {
-    if (err.statusCode === 409) {
-      console.log("ℹ️  Tabla Users ya existe");
-    } else {
-      throw err;
-    }
-  }
+    const client = TableClient.fromConnectionString(conn, "Users");
 
-  console.log("\n🎉 Setup completo.");
-  console.log("💡 Usuarios @toval-tech.com tienen acceso admin automático");
-  console.log("💡 Otros usuarios se crean desde /settings");
+    // Crear tabla
+    console.log("⏳ Creando tabla Users...");
+    try {
+      await client.createTable();
+      console.log("✅ Tabla Users creada exitosamente");
+    } catch (err) {
+      if (err.statusCode === 409) {
+        console.log("ℹ️  Tabla Users ya existe (ok)");
+      } else {
+        throw err;
+      }
+    }
+
+    console.log("\n🎉 Setup completo!\n");
+    console.log("💡 Usuarios @toval-tech.com tienen acceso admin automático");
+    console.log("💡 Otros usuarios se crean desde /settings\n");
+    
+  } catch (error) {
+    console.error("\n❌ Error:", error.message);
+    console.error("\nVerificá que el connection string sea correcto.\n");
+    process.exit(1);
+  }
 }
 
-setup().catch(console.error);
+setup();
