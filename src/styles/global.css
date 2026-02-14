@@ -213,10 +213,11 @@ a:hover{ opacity:.98; }
 }
 
 /* Tipografía base */
-h1,h2{ margin:0; }
+h1,h2,h3{ margin:0; }
 p{ margin:0; }
 
 .muted{ color: var(--muted); }
+.mono{ font-family: var(--font-mono); }
 
 /* Cards */
 .card{
@@ -282,10 +283,18 @@ p{ margin:0; }
   color: rgba(255,255,255,.90);
   cursor: pointer;
   user-select:none;
+  font-size: 14px;
+  font-family: var(--font-sans);
+  transition: all 0.2s;
 }
 
 .btn:hover{
   box-shadow: 0 0 24px rgba(0,229,255,.10);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .btnPrimary{
@@ -325,6 +334,25 @@ p{ margin:0; }
   background: rgba(0,0,0,.18);
 }
 
+.btnIcon {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.2s;
+}
+
+.btnIcon:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
 /* Inputs / selects */
 input, select{
   padding: 10px 12px;
@@ -333,11 +361,51 @@ input, select{
   background: rgba(0,0,0,.25);
   color: rgba(255,255,255,.90);
   outline: none;
+  font-family: var(--font-sans);
+  font-size: 14px;
 }
 
 input:focus, select:focus{
   border-color: rgba(0,229,255,.35);
   box-shadow: 0 0 0 3px rgba(0,229,255,.10);
+}
+
+/* Password Toggle */
+.passwordWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.passwordWrapper input {
+  padding-right: 44px;
+  width: 100%;
+}
+
+.passwordToggle {
+  position: absolute;
+  right: 12px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  transition: color 0.2s;
+  padding: 0;
+}
+
+.passwordToggle:hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.passwordToggle svg {
+  width: 18px;
+  height: 18px;
 }
 
 /* Catalog filters */
@@ -357,6 +425,10 @@ input:focus, select:focus{
   background: rgba(255,255,255,.02);
   color: var(--muted);
   font-size: 13px;
+}
+
+.fxInput {
+  max-width: 200px;
 }
 
 /* Table */
@@ -405,6 +477,13 @@ tbody tr:hover{ background: rgba(0,229,255,.06); }
   border-radius: var(--r);
   overflow:hidden;
   box-shadow: 0 18px 60px rgba(0,0,0,.40);
+  transition: all 0.2s;
+}
+
+.pCard:hover {
+  border-color: rgba(0,229,255,.25);
+  box-shadow: 0 20px 70px rgba(0,229,255,.15);
+  transform: translateY(-2px);
 }
 
 .pMedia{
@@ -414,12 +493,15 @@ tbody tr:hover{ background: rgba(0,229,255,.06); }
   justify-content:center;
   background: rgba(255,255,255,.02);
   border-bottom: 1px solid rgba(255,255,255,.08);
+  position: relative;
 }
 
 .pImg{
   width: 100%;
   height: 100%;
   object-fit: cover;
+  position: absolute;
+  inset: 0;
 }
 
 .pPh{
@@ -447,9 +529,15 @@ tbody tr:hover{ background: rgba(0,229,255,.06); }
   display:-webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+  font-weight: 500;
 }
 
-.pMeta{ margin-top: 10px; display:flex; flex-wrap:wrap; gap: 6px; }
+.pMeta{ 
+  margin-top: 10px; 
+  display:flex; 
+  flex-wrap:wrap; 
+  gap: 6px; 
+}
 
 .pChip{
   display:inline-flex;
@@ -462,13 +550,26 @@ tbody tr:hover{ background: rgba(0,229,255,.06); }
   font-size: 12px;
 }
 
-.pPrice{
-  margin-top: 10px;
-  font-family: var(--font-mono);
-  color: rgba(255,255,255,.90);
+/* Product pricing */
+.pPricing {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.mono{ font-family: var(--font-mono); }
+.pPriceBase {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.pPriceIva {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.65);
+}
 
 .emptyState{
   margin-top: 12px;
@@ -635,25 +736,6 @@ tbody tr:hover{ background: rgba(0,229,255,.06); }
   gap: 8px;
 }
 
-.btnIcon {
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.02);
-  cursor: pointer;
-  font-size: 16px;
-  transition: all 0.2s;
-}
-
-.btnIcon:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
 /* Modal */
 .modal {
   position: fixed;
@@ -767,6 +849,192 @@ tbody tr:hover{ background: rgba(0,229,255,.06); }
   padding: 32px;
   text-align: center;
   color: rgba(255, 255, 255, 0.6);
+}
+
+/* Modal de detalle de producto */
+.ttModal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.ttModal.hidden {
+  display: none;
+}
+
+.ttModalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+}
+
+.ttModalPanel {
+  position: relative;
+  width: min(700px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--bg1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.8);
+  animation: ttModalSlide 0.3s ease-out;
+}
+
+@keyframes ttModalSlide {
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.ttModalClose {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.4);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+  z-index: 10;
+}
+
+.ttModalClose:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 1);
+}
+
+.ttModalGrid {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr;
+  gap: 24px;
+  padding: 32px;
+}
+
+@media (max-width: 768px) {
+  .ttModalGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ttModalImg {
+  width: 100%;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.ttModalImg img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.ttModalPh {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 48px;
+  color: rgba(255, 255, 255, 0.3);
+  background: radial-gradient(
+    circle at 50% 0%,
+    rgba(0, 229, 255, 0.08),
+    transparent 70%
+  );
+}
+
+.ttModalInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ttModalTitle {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.ttModalSub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.ttModalPrices {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ttModalPrices .row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  font-family: var(--font-mono);
+  font-size: 14px;
+}
+
+.ttModalPrices .row span {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.ttModalPrices .row b {
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 16px;
+}
+
+.ttModalPrices .row.small {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  padding-top: 10px;
+  margin-top: 4px;
+}
+
+.ttModalHint {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  font-style: italic;
 }
 
 @keyframes fadeIn {

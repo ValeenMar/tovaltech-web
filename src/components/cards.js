@@ -23,12 +23,15 @@ export function renderProductCards({ rows, providerName, formatMoney }) {
 
   return `
     <div class="productsGrid">
-      ${rows.map(r => {
+      ${rows.map((r, idx) => {
         const title = r.name || r.sku || "Producto";
-        const money = formatMoney(r.price, r.currency) ?? "-";
+        const basePrice = formatMoney(r.price, r.currency) || "-";
         const brand = r.brand || "-";
         const prov = providerName(r.providerId);
-        const img = r.image || r.imageUrl || "";
+        const img = r.imageUrl || r.thumbUrl || r.image || "";
+
+        // Precio con IVA (si existe)
+        const priceWithIva = r.priceWithIvaText || "";
 
         const ph = `<div class="pPh">${esc(initials(brand !== "-" ? brand : title))}</div>`;
 
@@ -38,16 +41,21 @@ export function renderProductCards({ rows, providerName, formatMoney }) {
         `;
 
         return `
-          <div class="pCard">
+          <div class="pCard" data-tt="product-card" data-idx="${idx}" style="cursor:pointer;">
             <div class="pMedia">${media}</div>
             <div class="pBody">
               <div class="pTitle" title="${esc(title)}">${esc(title)}</div>
+              
               <div class="pMeta">
                 <span class="pChip">${esc(prov)}</span>
                 <span class="pChip">${esc(brand)}</span>
                 <span class="pChip mono">${esc(r.sku || "-")}</span>
               </div>
-              <div class="pPrice">${esc(money)}</div>
+
+              <div class="pPricing">
+                <div class="pPriceBase">${esc(basePrice)}</div>
+                ${priceWithIva ? `<div class="pPriceIva">${esc(priceWithIva)}</div>` : ""}
+              </div>
             </div>
           </div>
         `;
