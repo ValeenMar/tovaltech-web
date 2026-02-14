@@ -9,7 +9,9 @@ function _getElitCsvUrl() {
   const uid = process.env.ELIT_USER_ID;
   const tok = process.env.ELIT_TOKEN;
   if (!uid || !tok) return null;
-  return `https://clientes.elit.com.ar/v1/api/productos/csv?user_id=${encodeURIComponent(uid)}&token=${encodeURIComponent(tok)}`;
+  return `https://clientes.elit.com.ar/v1/api/productos/csv?user_id=${encodeURIComponent(
+    uid
+  )}&token=${encodeURIComponent(tok)}`;
 }
 
 // Minimal CSV parser (comma-separated, supports quotes)
@@ -190,21 +192,22 @@ app.http("getProducts", {
       if (!limit || limit < 1) limit = 100;
       if (limit > 20000) limit = 20000;
 
-      // IMPORTANTE:
-      // Azure Tables no permite $top > 1000 (da InvalidInput).
-      // Por eso NO mandamos top=limit; paginamos y cortamos manualmente.
-      const clauses = ["PartitionKey eq 'product'"];
+      // IMPORTANTE (tu esquema real):
+      // Products Table usa PartitionKey = providerId ("elit", "intermaco", ...)
+      // y RowKey = SKU/ID.
+      let filter = "";
       if (provider && provider !== "all") {
-        clauses.push(`providerId eq '${escapeODataString(provider)}'`);
+        filter = `PartitionKey eq '${escapeODataString(provider)}'`;
       }
-      const filter = clauses.join(" and ");
 
       const items = [];
-      const iter = client.listEntities({ queryOptions: { filter } });
+      const iter = filter
+        ? client.listEntities({ queryOptions: { filter } })
+        : client.listEntities();
 
       for await (const e of iter) {
-        const sku = e.sku ?? e.codigo_producto ?? e.RowKey ?? e.rowKey ?? null;
-        const name = e.name ?? e.nombre ?? null;
+        const sku = e.rowKey ?? e.RowKey ?? e.sku ?? e.id ?? e.codigo_producto ?? null;
+        const name = e.name ?? e.nombre ?? e.nombre_producto ?? null;
         const brand = e.brand ?? e.marca ?? null;
 
         if (q) {
@@ -215,9 +218,11 @@ app.http("getProducts", {
           if (!hay) continue;
         }
 
+        const providerId = e.partitionKey ?? e.PartitionKey ?? provider ?? null;
+
         items.push({
           sku: sku ? String(sku) : null,
-          providerId: e.providerId ?? provider ?? null,
+          providerId: providerId ? String(providerId).toLowerCase() : null,
           name,
           brand,
           price: toNumber(e.price),
