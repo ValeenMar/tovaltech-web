@@ -16,7 +16,7 @@ function initials(name) {
   return parts.map(p => p[0]?.toUpperCase()).join("") || "?";
 }
 
-export function renderProductCards({ rows, providerName, formatMoney }) {
+export function renderProductCards({ rows, formatMoney }) {
   if (!rows?.length) {
     return `<div class="emptyState">No hay items para mostrar.</div>`;
   }
@@ -27,7 +27,10 @@ export function renderProductCards({ rows, providerName, formatMoney }) {
         const title = r.name || r.sku || "Producto";
         const basePrice = formatMoney(r.price, r.currency) || "-";
         const brand = r.brand || "-";
-        const prov = providerName(r.providerId);
+        
+        // Usar providerName directamente del objeto (ya viene procesado desde catalogo.js)
+        const prov = r.providerName || r.providerId || "-";
+        
         const img = r.imageUrl || r.thumbUrl || r.image || "";
 
         // Precio con IVA (si existe)
