@@ -13,13 +13,12 @@ const SPECIFIC_USERS = [
     name: "Vendedor Demo",
     role: "vendor",
   },
-  // Agregá más vendors acá si querés
 ];
 
 // Dominios que tienen acceso admin automático
 const ADMIN_DOMAINS = ["toval-tech.com"];
 
-// Password temporal para @toval-tech.com (cambiar después)
+// Password temporal para @toval-tech.com
 const ADMIN_DEFAULT_PASSWORD = "Milanesa";
 
 app.http("login", {
@@ -30,7 +29,6 @@ app.http("login", {
       const body = await request.json();
       const { email, password } = body;
 
-      // Validación básica
       if (!email || !password) {
         return {
           status: 400,
@@ -57,10 +55,10 @@ app.http("login", {
           };
         }
 
-        const userName = emailLower.split("@")[0]; // "valentin" o "tobias"
+        const userName = emailLower.split("@")[0];
         const displayName = userName.charAt(0).toUpperCase() + userName.slice(1);
 
-        const token = generateSimpleToken({
+        const token = generateToken({
           email: emailLower,
           role: "admin",
           name: displayName,
@@ -99,7 +97,7 @@ app.http("login", {
           };
         }
 
-        const token = generateSimpleToken({
+        const token = generateToken({
           email: specificUser.email,
           role: specificUser.role,
           name: specificUser.name,
@@ -144,12 +142,13 @@ app.http("login", {
 });
 
 /**
- * Genera un token JWT simple
+ * Genera un token JWT compatible con extractUser()
  */
-function generateSimpleToken(payload) {
-  const header = Buffer.from(
-    JSON.stringify({ alg: "HS256", typ: "JWT" })
-  ).toString("base64url");
+function generateToken(payload) {
+  const header = {
+    alg: "HS256",
+    typ: "JWT",
+  };
 
   const data = {
     ...payload,
@@ -157,11 +156,25 @@ function generateSimpleToken(payload) {
     iat: Date.now(),
   };
 
-  const body = Buffer.from(JSON.stringify(data)).toString("base64url");
+  // Codificar como base64url (compatible con Buffer.from en users.js)
+  const headerB64 = base64UrlEncode(JSON.stringify(header));
+  const payloadB64 = base64UrlEncode(JSON.stringify(data));
 
-  const signature = Buffer.from(
-    `${header}.${body}.${process.env.JWT_SECRET || "tovaltech-secret-2025"}`
-  ).toString("base64url");
+  // Firma simple
+  const signature = base64UrlEncode(
+    `${headerB64}.${payloadB64}.${process.env.JWT_SECRET || "tovaltech-secret-2025"}`
+  );
 
-  return `${header}.${body}.${signature}`;
+  return `${headerB64}.${payloadB64}.${signature}`;
+}
+
+/**
+ * Helper: codifica a base64url
+ */
+function base64UrlEncode(str) {
+  const b64 = Buffer.from(str).toString("base64");
+  return b64
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=/g, "");
 }
