@@ -512,3 +512,268 @@ tbody tr:hover{ background: rgba(0,229,255,.06); }
 .logMeta{ font-size: 12px; color: var(--muted); }
 .logBody{ margin-top:6px; }
 .chatActions{ display:flex; gap:10px; align-items:center; margin-top:10px; }
+
+/* Settings Page */
+.settingsPage {
+  max-width: 1200px;
+}
+
+.settingsTabs {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.tabBtn {
+  padding: 10px 16px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  transition: all 0.2s;
+}
+
+.tabBtn:hover {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.tabBtn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.tabContent {
+  margin-top: 24px;
+}
+
+.tabPane {
+  animation: fadeIn 0.3s;
+}
+
+.tabPane.hidden {
+  display: none;
+}
+
+.settingsHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.settingsHeader h3 {
+  margin: 0;
+}
+
+/* Users List */
+.usersList {
+  min-height: 200px;
+}
+
+.usersTable {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.userRow {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 16px;
+  align-items: center;
+  padding: 12px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.18);
+  transition: all 0.2s;
+}
+
+.userRow:hover {
+  background: rgba(0, 229, 255, 0.06);
+  border-color: rgba(0, 229, 255, 0.2);
+}
+
+.userInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.userEmail {
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.userName {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.userRole {
+  display: flex;
+  align-items: center;
+}
+
+.roleBadge {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.userActions {
+  display: flex;
+  gap: 8px;
+}
+
+.btnIcon {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.2s;
+}
+
+.btnIcon:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Modal */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal.hidden {
+  display: none;
+}
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(4px);
+}
+
+.modalPanel {
+  position: relative;
+  width: min(500px, 100%);
+  background: var(--bg1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.7);
+  animation: modalSlideIn 0.3s;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.modalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.modalHeader h3 {
+  margin: 0;
+}
+
+.modalClose {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.modalClose:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.modalBody {
+  padding: 24px;
+}
+
+.formGroup {
+  margin-bottom: 16px;
+}
+
+.formGroup label {
+  display: block;
+  margin-bottom: 6px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.formGroup input,
+.formGroup select {
+  width: 100%;
+}
+
+.formGroup small {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.modalFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.loading {
+  padding: 32px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

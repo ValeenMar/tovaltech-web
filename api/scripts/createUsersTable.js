@@ -62,3 +62,38 @@ async function setup() {
 }
 
 setup().catch(console.error);
+
+/**
+ * Script para crear tabla Users
+ * Ejecutar UNA VEZ: node api/scripts/createUsersTable.js
+ */
+
+const { TableClient } = require("@azure/data-tables");
+
+async function setup() {
+  const conn = process.env.STORAGE_CONNECTION_STRING;
+  if (!conn) {
+    console.error("❌ Set STORAGE_CONNECTION_STRING en .env o variables de entorno");
+    process.exit(1);
+  }
+
+  const client = TableClient.fromConnectionString(conn, "Users");
+
+  // Crear tabla
+  try {
+    await client.createTable();
+    console.log("✅ Tabla Users creada");
+  } catch (err) {
+    if (err.statusCode === 409) {
+      console.log("ℹ️  Tabla Users ya existe");
+    } else {
+      throw err;
+    }
+  }
+
+  console.log("\n🎉 Setup completo.");
+  console.log("💡 Usuarios @toval-tech.com tienen acceso admin automático");
+  console.log("💡 Otros usuarios se crean desde /settings");
+}
+
+setup().catch(console.error);

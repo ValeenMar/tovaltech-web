@@ -57,3 +57,19 @@
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
+<nav class="nav" aria-label="Navegación">
+  <a href="/" data-link>Home</a>
+  <a href="/catalogo" data-link>Productos</a>
+  <a href="/proveedores" data-link>Proveedores</a>
+  <a href="/nosotros" data-link>Nosotros</a>
+  <a href="/contacto" data-link>Contacto</a>
+
+  <!-- ... search ... -->
+
+  <!-- Admin-only -->
+  <a href="/settings" data-link data-auth="admin">Settings</a>
+  <a href="/chat" data-link data-auth="admin">Jeffrey</a>
+
+  <a href="/login" data-link data-auth="login">Login</a>
+  <a href="/logout" data-link data-auth="logout">Logout</a>
+</nav>

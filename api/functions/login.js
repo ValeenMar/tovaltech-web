@@ -1,32 +1,26 @@
 /**
- * Login endpoint - VERSIÓN SIMPLIFICADA QUE FUNCIONA
- * Primero hacemos que ande, después mejoramos
+ * Login endpoint con dominios autorizados
+ * @toval-tech.com = admin automático
  */
 
 const { app } = require("@azure/functions");
 
-// Usuarios hardcodeados temporalmente (FASE 1)
-// En FASE 2 los movemos a Azure Tables
-const USERS = [
+// Usuarios específicos (vendors, clientes especiales, etc)
+const SPECIFIC_USERS = [
   {
-    email: "admin@tovaltech.com",
-    password: "Milanesa",
-    name: "Admin TovalTech",
-    role: "admin",
-  },
-  {
-    email: "tobias@tovaltech.com",
-    password: "Milanesa",
-    name: "Tobias",
-    role: "admin",
-  },
-  {
-    email: "vendor@tovaltech.com",
+    email: "vendor@ejemplo.com",
     password: "Milanesa",
     name: "Vendedor Demo",
     role: "vendor",
   },
+  // Agregá más vendors acá si querés
 ];
+
+// Dominios que tienen acceso admin automático
+const ADMIN_DOMAINS = ["toval-tech.com"];
+
+// Password temporal para @toval-tech.com (cambiar después)
+const ADMIN_DEFAULT_PASSWORD = "Milanesa";
 
 app.http("login", {
   methods: ["POST"],
@@ -47,41 +41,93 @@ app.http("login", {
         };
       }
 
-      // Buscar usuario
-      const user = USERS.find(
-        (u) => u.email.toLowerCase() === email.toLowerCase()
-      );
+      const emailLower = email.toLowerCase().trim();
+      const domain = emailLower.split("@")[1];
 
-      if (!user || user.password !== password) {
-        context.log("Login fallido:", email);
+      // CASO 1: Email de dominio admin (@toval-tech.com)
+      if (ADMIN_DOMAINS.includes(domain)) {
+        if (password !== ADMIN_DEFAULT_PASSWORD) {
+          context.log("Login fallido (admin):", emailLower);
+          return {
+            status: 401,
+            jsonBody: {
+              success: false,
+              message: "Credenciales inválidas",
+            },
+          };
+        }
+
+        const userName = emailLower.split("@")[0]; // "valentin" o "tobias"
+        const displayName = userName.charAt(0).toUpperCase() + userName.slice(1);
+
+        const token = generateSimpleToken({
+          email: emailLower,
+          role: "admin",
+          name: displayName,
+        });
+
+        context.log("Login exitoso (admin):", emailLower);
+
         return {
-          status: 401,
+          status: 200,
           jsonBody: {
-            success: false,
-            message: "Credenciales inválidas",
+            success: true,
+            token,
+            user: {
+              email: emailLower,
+              name: displayName,
+              role: "admin",
+            },
           },
         };
       }
 
-      // Generar token simple (mejoramos en FASE 2)
-      const token = generateSimpleToken({
-        email: user.email,
-        role: user.role,
-        name: user.name,
-      });
+      // CASO 2: Usuario específico (vendor, etc)
+      const specificUser = SPECIFIC_USERS.find(
+        (u) => u.email.toLowerCase() === emailLower
+      );
 
-      context.log("Login exitoso:", email, user.role);
+      if (specificUser) {
+        if (specificUser.password !== password) {
+          context.log("Login fallido (specific):", emailLower);
+          return {
+            status: 401,
+            jsonBody: {
+              success: false,
+              message: "Credenciales inválidas",
+            },
+          };
+        }
 
-      return {
-        status: 200,
-        jsonBody: {
-          success: true,
-          token,
-          user: {
-            email: user.email,
-            name: user.name,
-            role: user.role,
+        const token = generateSimpleToken({
+          email: specificUser.email,
+          role: specificUser.role,
+          name: specificUser.name,
+        });
+
+        context.log("Login exitoso (specific):", emailLower, specificUser.role);
+
+        return {
+          status: 200,
+          jsonBody: {
+            success: true,
+            token,
+            user: {
+              email: specificUser.email,
+              name: specificUser.name,
+              role: specificUser.role,
+            },
           },
+        };
+      }
+
+      // CASO 3: Usuario no autorizado
+      context.log("Login fallido (unauthorized):", emailLower);
+      return {
+        status: 401,
+        jsonBody: {
+          success: false,
+          message: "Usuario no autorizado. Contactá a un administrador.",
         },
       };
     } catch (error) {
@@ -99,22 +145,22 @@ app.http("login", {
 
 /**
  * Genera un token JWT simple
- * Por ahora sin librería externa para no agregar peso
  */
 function generateSimpleToken(payload) {
-  const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
-  
+  const header = Buffer.from(
+    JSON.stringify({ alg: "HS256", typ: "JWT" })
+  ).toString("base64url");
+
   const data = {
     ...payload,
     exp: Date.now() + 24 * 60 * 60 * 1000, // 24 horas
     iat: Date.now(),
   };
-  
+
   const body = Buffer.from(JSON.stringify(data)).toString("base64url");
-  
-  // Firma simple (en FASE 2 usamos crypto)
+
   const signature = Buffer.from(
-    `${header}.${body}.${process.env.JWT_SECRET || "tovaltech-secret"}`
+    `${header}.${body}.${process.env.JWT_SECRET || "tovaltech-secret-2025"}`
   ).toString("base64url");
 
   return `${header}.${body}.${signature}`;

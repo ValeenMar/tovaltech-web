@@ -1,7 +1,6 @@
 // File: /api/index.js
 const { app } = require("@azure/functions");
 
-// Importante para que el runtime cargue tus endpoints (app.http)
 app.setup({ enableHttpStream: true });
 
 require("./functions/login");
@@ -10,3 +9,4 @@ require("./functions/getProducts");
 require("./functions/getProviders");
 require("./functions/providersElitImport");
 require("./functions/health");
+require("./functions/users"); // ← NUEVA LÍNEA

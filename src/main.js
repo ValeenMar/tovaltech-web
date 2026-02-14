@@ -382,3 +382,29 @@ function escapeHtml(str) {
     }
   });
 }
+// ... imports existentes ...
+import { SettingsPage, wireSettings } from "./pages/settings.js";
+
+// ... código existente ...
+
+const routes = {
+  "/": () => `...`,
+  "/catalogo": CatalogoPage,
+  "/proveedores": ProveedoresPage,
+  "/nosotros": NosotrosPage,
+  "/contacto": ContactoPage,
+  "/chat": ChatPage,
+  "/settings": SettingsPage, // ← NUEVA LÍNEA
+  "/login": () => `...`,
+};
+
+// ... más código ...
+
+// En la función render(), agregar:
+function render() {
+  // ... código existente ...
+
+  if (path === "/settings") wireSettings();
+  
+  // ... resto del código ...
+}
