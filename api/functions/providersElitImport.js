@@ -19,10 +19,11 @@ function getProvidersClient() {
 function toNumber(v) {
   if (v === null || v === undefined || v === "") return null;
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
-  let s = String(v).trim();
-  if (!s) return null;
 
-  s = s.replace(/\s+/g, "");
+  const s0 = String(v).trim();
+  if (!s0) return null;
+
+  let s = s0.replace(/\s+/g, "");
   const hasComma = s.includes(",");
   const hasDot = s.includes(".");
 
@@ -49,69 +50,80 @@ function normalizeCurrency(v) {
   return s.toUpperCase();
 }
 
-function parseCsvLine(line) {
-  // CSV con comas + soporte de comillas dobles.
+// CSV parser (supports quotes + newlines inside quotes)
+function parseCsv(text) {
   const out = [];
-  let cur = "";
+  let row = [];
+  let field = "";
   let inQuotes = false;
 
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
+  if (!text) return out;
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
 
     if (inQuotes) {
-      if (ch === '"') {
-        if (line[i + 1] === '"') {
-          cur += '"';
+      if (c === '"') {
+        const next = text[i + 1];
+        if (next === '"') {
+          field += '"';
           i++;
         } else {
           inQuotes = false;
         }
       } else {
-        cur += ch;
+        field += c;
       }
       continue;
     }
 
-    if (ch === '"') {
+    if (c === '"') {
       inQuotes = true;
-      continue;
+    } else if (c === ",") {
+      row.push(field);
+      field = "";
+    } else if (c === "\n") {
+      row.push(field);
+      out.push(row);
+      row = [];
+      field = "";
+    } else if (c === "\r") {
+      // ignore
+    } else {
+      field += c;
     }
-
-    if (ch === ",") {
-      out.push(cur);
-      cur = "";
-      continue;
-    }
-
-    cur += ch;
   }
 
-  out.push(cur);
+  if (field.length || row.length) {
+    row.push(field);
+    out.push(row);
+  }
+
   return out;
 }
 
-function parseCsvToObjects(text) {
-  const lines = text.split(/\r?\n/).filter((l) => l && l.trim().length);
-  if (!lines.length) return [];
+function csvToObjects(text) {
+  const rows = parseCsv(text);
+  if (!rows.length) return [];
 
-  const headers = parseCsvLine(lines[0]).map((h) => h.trim());
-  const rows = [];
+  const header = rows[0].map((h) => String(h || "").trim());
+  const out = [];
 
-  for (let i = 1; i < lines.length; i++) {
-    const cols = parseCsvLine(lines[i]);
-    if (!cols.length) continue;
-
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || !row.length) continue;
     const obj = {};
-    for (let c = 0; c < headers.length; c++) obj[headers[c]] = cols[c] ?? "";
-    rows.push(obj);
+    for (let c = 0; c < header.length; c++) obj[header[c]] = row[c] ?? "";
+    out.push(obj);
   }
 
-  return rows;
+  return out;
 }
 
 async function requireAdmin(request) {
   const appPass = process.env.APP_PASSWORD;
-  if (!appPass) return true; // si no hay password configurada, no bloqueamos
+  if (!appPass) return true;
 
   const headerPass = request.headers.get("x-app-password");
   const qpPass = request.query.get("password");
@@ -156,10 +168,8 @@ async function fetchElitJson({ limit, offset }) {
     throw new Error(`ELIT JSON parse error: ${String(e?.message || e)} | body: ${text.slice(0, 200)}`);
   }
 
-  // el formato exacto puede variar
   const items = json?.items || json?.productos || json?.data || [];
-  if (!Array.isArray(items)) return [];
-  return items;
+  return Array.isArray(items) ? items : [];
 }
 
 async function fetchElitCsvRaw() {
@@ -172,8 +182,24 @@ async function fetchElitCsvRaw() {
   const res = await fetch(url, { method: "GET" });
   const text = await res.text();
   if (!res.ok) throw new Error(`ELIT CSV HTTP ${res.status}: ${text.slice(0, 200)}`);
-
   return text;
+}
+
+async function upsertBatch(productsClient, entities) {
+  if (!entities.length) return;
+
+  // Azure Tables: max 100 acciones por batch y MISMO PartitionKey.
+  const CHUNK = 100;
+
+  for (let i = 0; i < entities.length; i += CHUNK) {
+    const slice = entities.slice(i, i + CHUNK);
+    const actions = slice.map((entity) => ({
+      actionType: "upsert",
+      entity,
+      updateMode: "Merge",
+    }));
+    await productsClient.submitTransaction(actions);
+  }
 }
 
 app.http("providersElitImport", {
@@ -190,13 +216,16 @@ app.http("providersElitImport", {
         };
       }
 
-      const source = (request.query.get("source") || "json").toLowerCase(); // "json" | "csv"
+      const source = (request.query.get("source") || "csv").toLowerCase(); // "csv" | "json"
       const dry = (request.query.get("dry") || "").toLowerCase() === "1";
+
+      const max = Math.max(1, Math.min(20000, Math.floor(toNumber(request.query.get("max")) || 1000)));
+      const skip = Math.max(0, Math.floor(toNumber(request.query.get("skip")) || 0));
 
       const productsClient = getProductsClient();
       const providersClient = getProvidersClient();
 
-      // upsert provider
+      // upsert provider (NO pisar fx)
       if (!dry) {
         await providersClient.upsertEntity(
           {
@@ -206,8 +235,6 @@ app.http("providersElitImport", {
             name: "ELIT",
             api: true,
             currency: "USD",
-            // fx lo dejamos como esté (si ya existe) o 0
-            fx: 0,
             ivaIncluded: false,
             notes: "Importado desde ELIT",
             updatedAt: new Date().toISOString(),
@@ -219,52 +246,66 @@ app.http("providersElitImport", {
       let imported = 0;
       const errors = [];
 
-      if (source === "csv") {
-        // CSV trae imágenes + IVA
-        const skip = Math.max(0, Math.floor(toNumber(request.query.get("skip")) || 0));
-        let max = Math.floor(toNumber(request.query.get("max")) || 0);
-        if (!max || max < 1) max = 5000; // safety
-        if (max > 20000) max = 20000;
+      // Guardamos productos con PartitionKey = "elit" (para filtrar y batchear rápido)
+      const PK = "elit";
 
+      if (source === "csv") {
         const csvText = await fetchElitCsvRaw();
-        const rows = parseCsvToObjects(csvText);
+        const rows = csvToObjects(csvText);
+
+        const batch = [];
 
         for (let i = skip; i < rows.length && imported < max; i++) {
           const r = rows[i];
 
-          // nombres de columnas reales (según el CSV que compartiste)
-          const sku = String(r.codigo_producto || r.codigo || r.sku || "").trim();
+          const sku = String(r.codigo_producto || r.codigo || r.id || r.sku || "").trim();
           if (!sku) continue;
 
           const entity = {
-            PartitionKey: "product",
+            PartitionKey: PK,
             RowKey: sku,
+
             sku,
             providerId: "elit",
-            name: (r.nombre || r.descripcion || "").trim(),
-            brand: (r.marca || "").trim(),
+            name: String(r.nombre || r.descripcion || "").trim() || null,
+            brand: String(r.marca || "").trim() || null,
+
             price: toNumber(r.precio),
             currency: normalizeCurrency(r.moneda) || "USD",
+
             ivaRate: toNumber(r.iva),
-            ivaIncluded: String(r.iva_incluido || "").trim(),
-            imageUrl: (r.imagen || "").trim() || null,
-            thumbUrl: (r.miniatura || "").trim() || null,
-            category: (r.rubro || "").trim() || null,
-            subcategory: (r.sub_rubro || "").trim() || null,
-            model: (r.modelo || "").trim() || null,
-            partNumber: (r.part_number || "").trim() || null,
+            ivaIncluded: String(r.iva_incluido || "").trim() || null,
+
+            imageUrl: String(r.imagen || "").trim() || null,
+            thumbUrl: String(r.miniatura || "").trim() || null,
+
+            category: String(r.rubro || "").trim() || null,
+            subcategory: String(r.sub_rubro || "").trim() || null,
+            model: String(r.modelo || "").trim() || null,
+            partNumber: String(r.part_number || "").trim() || null,
+
             updatedAt: new Date().toISOString(),
           };
 
           if (!dry) {
-            try {
-              await productsClient.upsertEntity(entity, "Merge");
-              imported++;
-            } catch (e) {
-              errors.push({ sku, error: String(e?.message || e) });
+            batch.push(entity);
+            if (batch.length >= 100) {
+              try {
+                await upsertBatch(productsClient, batch.splice(0, batch.length));
+              } catch (e) {
+                errors.push({ sku, error: String(e?.message || e) });
+              }
             }
-          } else {
-            imported++;
+          }
+
+          imported++;
+        }
+
+        if (!dry && batch.length) {
+          try {
+            await upsertBatch(productsClient, batch);
+          } catch (e) {
+            errors.push({ error: String(e?.message || e) });
           }
         }
 
@@ -279,24 +320,27 @@ app.http("providersElitImport", {
             max,
             totalCsvRows: rows.length,
             nextSkip: skip + imported,
+            partitionKey: PK,
             errors,
           }),
         };
       }
 
-      // JSON (sin imágenes)
-      const limit = Math.max(1, Math.min(5000, Math.floor(toNumber(request.query.get("limit")) || 500)));
-      const offset = Math.max(0, Math.floor(toNumber(request.query.get("offset")) || 0));
+      // JSON: soporta "all=1" para paginar hasta max
+      const all = (request.query.get("all") || "") === "1";
+      const pageLimit = Math.max(1, Math.min(5000, Math.floor(toNumber(request.query.get("limit")) || 500)));
+      let offset = Math.max(0, Math.floor(toNumber(request.query.get("offset")) || 0));
 
-      const items = await fetchElitJson({ limit, offset });
+      const batch = [];
 
-      for (const it of items) {
-        const sku = String(it.codigo_producto || it.codigo || it.sku || "").trim();
-        if (!sku) continue;
+      const importOne = async (it) => {
+        const sku = String(it.codigo_producto || it.codigo || it.id || it.sku || "").trim();
+        if (!sku) return;
 
         const entity = {
-          PartitionKey: "product",
+          PartitionKey: PK,
           RowKey: sku,
+
           sku,
           providerId: "elit",
           name: it.nombre || it.descripcion || null,
@@ -307,14 +351,76 @@ app.http("providersElitImport", {
         };
 
         if (!dry) {
-          try {
-            await productsClient.upsertEntity(entity, "Merge");
-            imported++;
-          } catch (e) {
-            errors.push({ sku, error: String(e?.message || e) });
+          batch.push(entity);
+          if (batch.length >= 100) {
+            await upsertBatch(productsClient, batch.splice(0, batch.length));
           }
-        } else {
-          imported++;
+        }
+
+        imported++;
+      };
+
+      if (!all) {
+        const items = await fetchElitJson({ limit: Math.min(pageLimit, max), offset });
+
+        for (const it of items) {
+          if (imported >= max) break;
+          try {
+            await importOne(it);
+          } catch (e) {
+            errors.push({ error: String(e?.message || e) });
+          }
+        }
+
+        if (!dry && batch.length) {
+          try {
+            await upsertBatch(productsClient, batch);
+          } catch (e) {
+            errors.push({ error: String(e?.message || e) });
+          }
+        }
+
+        return {
+          status: 200,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            ok: true,
+            source: "json",
+            imported,
+            limit: pageLimit,
+            offset,
+            received: Array.isArray(items) ? items.length : 0,
+            nextOffset: offset + (Array.isArray(items) ? items.length : 0),
+            partitionKey: PK,
+            errors,
+          }),
+        };
+      }
+
+      // all=1
+      while (imported < max) {
+        const items = await fetchElitJson({ limit: pageLimit, offset });
+        if (!items.length) break;
+
+        for (const it of items) {
+          if (imported >= max) break;
+          try {
+            await importOne(it);
+          } catch (e) {
+            errors.push({ error: String(e?.message || e) });
+          }
+        }
+
+        offset += items.length;
+
+        if (items.length < pageLimit) break;
+      }
+
+      if (!dry && batch.length) {
+        try {
+          await upsertBatch(productsClient, batch);
+        } catch (e) {
+          errors.push({ error: String(e?.message || e) });
         }
       }
 
@@ -324,11 +430,12 @@ app.http("providersElitImport", {
         body: JSON.stringify({
           ok: true,
           source: "json",
+          all: true,
           imported,
-          limit,
-          offset,
-          received: Array.isArray(items) ? items.length : 0,
-          nextOffset: offset + (Array.isArray(items) ? items.length : 0),
+          limit: pageLimit,
+          nextOffset: offset,
+          max,
+          partitionKey: PK,
           errors,
         }),
       };

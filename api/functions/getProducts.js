@@ -9,20 +9,20 @@ function _getElitCsvUrl() {
   const uid = process.env.ELIT_USER_ID;
   const tok = process.env.ELIT_TOKEN;
   if (!uid || !tok) return null;
-  return `https://clientes.elit.com.ar/v1/api/productos/csv?user_id=${encodeURIComponent(
-    uid
-  )}&token=${encodeURIComponent(tok)}`;
+  return `https://clientes.elit.com.ar/v1/api/productos/csv?user_id=${encodeURIComponent(uid)}&token=${encodeURIComponent(tok)}`;
 }
 
-// Minimal CSV parser (comma-separated, supports quotes)
+// Minimal CSV parser (comma-separated, supports quotes + newlines inside quotes)
 function _parseCsv(text) {
   const out = [];
   let row = [];
   let field = "";
   let inQuotes = false;
 
+  if (!text) return out;
+
   // Strip BOM
-  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+  if (text && text.charCodeAt(0) === 0xfeff) text = text.slice(1);
 
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
@@ -59,7 +59,6 @@ function _parseCsv(text) {
     }
   }
 
-  // last field
   if (field.length || row.length) {
     row.push(field);
     out.push(row);
@@ -138,6 +137,7 @@ function getClient() {
 function toNumber(v) {
   if (v === null || v === undefined || v === "") return null;
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
+
   const s0 = String(v).trim();
   if (!s0) return null;
 
@@ -147,7 +147,6 @@ function toNumber(v) {
   const hasDot = s.includes(".");
 
   if (hasComma && hasDot) {
-    // si el último separador es coma -> decimal coma, sino decimal punto
     if (s.lastIndexOf(",") > s.lastIndexOf(".")) {
       s = s.replace(/\./g, "").replace(",", ".");
     } else {
@@ -173,8 +172,13 @@ function normalizeCurrency(v) {
 }
 
 function escapeODataString(v) {
-  // OData usa comillas simples, se escapan duplicándolas.
   return String(v).replace(/'/g, "''");
+}
+
+function toTime(v) {
+  if (!v) return 0;
+  const t = Date.parse(String(v));
+  return Number.isFinite(t) ? t : 0;
 }
 
 app.http("getProducts", {
@@ -189,39 +193,52 @@ app.http("getProducts", {
       const q = qRaw.toLowerCase();
 
       let limit = toNumber(request.query.get("limit"));
-      if (!limit || limit < 1) limit = 5000; // Cambiado de 100 a 5000 para mostrar más productos por default
+      if (!limit || limit < 1) limit = 5000;
       if (limit > 20000) limit = 20000;
 
-      // IMPORTANTE (tu esquema real):
-      // Products Table usa PartitionKey = providerId ("elit", "intermaco", ...)
-      // y RowKey = SKU/ID.
+      // Soporta 2 esquemas:
+      // A) PartitionKey = providerId ("elit"), RowKey = SKU
+      // B) PartitionKey = "product" y providerId en propiedad
       let filter = "";
       if (provider && provider !== "all") {
-        filter = `PartitionKey eq '${escapeODataString(provider)}'`;
+        const p = escapeODataString(provider);
+        filter = `(PartitionKey eq '${p}' or providerId eq '${p}')`;
       }
 
-      const items = [];
       const iter = filter
         ? client.listEntities({ queryOptions: { filter } })
         : client.listEntities();
 
+      const byKey = new Map(); // providerId::sku
+
       for await (const e of iter) {
-        const sku = e.rowKey ?? e.RowKey ?? e.sku ?? e.id ?? e.codigo_producto ?? null;
+        const rowKey = e.rowKey ?? e.RowKey ?? e.sku ?? e.id ?? e.codigo_producto ?? null;
+        const sku = rowKey ? String(rowKey).trim() : "";
+        if (!sku) continue;
+
+        const pkRaw = String(e.partitionKey ?? e.PartitionKey ?? "").trim().toLowerCase();
+        const propProvider = e.providerId ?? e.proveedorId ?? e.provider ?? null;
+
+        const providerId =
+          (pkRaw && pkRaw !== "product" && pkRaw !== "products" && pkRaw !== "p")
+            ? pkRaw
+            : (propProvider ? String(propProvider).trim().toLowerCase() : (provider || null));
+
+        if (provider && provider !== "all" && providerId && providerId !== provider) continue;
+
         const name = e.name ?? e.nombre ?? e.nombre_producto ?? null;
         const brand = e.brand ?? e.marca ?? null;
 
         if (q) {
           const hay =
-            (sku && String(sku).toLowerCase().includes(q)) ||
+            (sku && sku.toLowerCase().includes(q)) ||
             (name && String(name).toLowerCase().includes(q)) ||
             (brand && String(brand).toLowerCase().includes(q));
           if (!hay) continue;
         }
 
-        const providerId = e.partitionKey ?? e.PartitionKey ?? provider ?? null;
-
-        items.push({
-          sku: sku ? String(sku) : null,
+        const item = {
+          sku,
           providerId: providerId ? String(providerId).toLowerCase() : null,
           name,
           brand,
@@ -231,22 +248,30 @@ app.http("getProducts", {
           imageUrl: e.imageUrl ?? e.image ?? null,
           thumbUrl: e.thumbUrl ?? e.thumbnail ?? e.miniatura ?? null,
           stock: toNumber(e.stock),
-          updatedAt: e.updatedAt ?? e.timestamp ?? null,
-        });
+          updatedAt: e.updatedAt ?? e.updatedAtIso ?? e.timestamp ?? null,
+        };
 
-        if (items.length >= limit) break;
+        const key = `${item.providerId || "_"}::${item.sku}`;
+        const prev = byKey.get(key);
+        if (!prev || toTime(item.updatedAt) >= toTime(prev.updatedAt)) {
+          byKey.set(key, item);
+        }
+
+        if (byKey.size >= limit) break;
       }
 
-      // ELIT CSV enrichment: agrega imagen/miniatura + IVA cuando falte
+      const items = Array.from(byKey.values());
+
       const needElit = items.some(
         (p) => p.providerId === "elit" && (!p.thumbUrl || !p.imageUrl || p.ivaRate == null)
       );
+
       if (needElit) {
         const map = await _getElitCsvMap(context);
         if (map) {
           for (const p of items) {
             if (p.providerId !== "elit") continue;
-            const extra = map.get(String(p.sku || "").trim());
+            const extra = map.get(p.sku);
             if (!extra) continue;
             if (!p.imageUrl && extra.imageUrl) p.imageUrl = extra.imageUrl;
             if (!p.thumbUrl && extra.thumbUrl) p.thumbUrl = extra.thumbUrl;
@@ -255,8 +280,13 @@ app.http("getProducts", {
         }
       }
 
-      // orden estable
-      items.sort((a, b) => (a?.name || "").localeCompare(b?.name || ""));
+      items.sort((a, b) => {
+        const an = String(a.name ?? "").toLowerCase();
+        const bn = String(b.name ?? "").toLowerCase();
+        if (an < bn) return -1;
+        if (an > bn) return 1;
+        return String(a.sku ?? "").localeCompare(String(b.sku ?? ""));
+      });
 
       return {
         status: 200,
