@@ -213,8 +213,16 @@ app.http("providersElitImport", {
         for (let i = skip; i < rows.length && imported < max; i++) {
           const r = rows[i];
 
-          const sku = String(r.codigo_producto || r.codigo || r.sku || "").trim();
+          // Limpiar SKU de caracteres problemáticos
+          let sku = String(r.codigo_producto || r.codigo || r.sku || "").trim();
           if (!sku) continue;
+
+          // Remover caracteres no válidos para Azure Table Storage
+          // Azure Table Storage no permite: / \ # ?
+          sku = sku.replace(/[\\/#?]/g, "-");
+          
+          // Si el SKU queda vacío después de limpiar, skip
+          if (!sku || sku === "-") continue;
 
           // CORREGIDO: partitionKey = "elit" (providerId), rowKey = sku
           const entity = {
@@ -294,8 +302,13 @@ app.http("providersElitImport", {
           for (const it of items) {
             if (totalImported >= maxTotal) break;
 
-            const sku = String(it.codigo_producto || it.codigo || it.sku || "").trim();
+            // Limpiar SKU de caracteres problemáticos
+            let sku = String(it.codigo_producto || it.codigo || it.sku || "").trim();
             if (!sku) continue;
+            
+            // Remover caracteres no válidos para Azure Table Storage
+            sku = sku.replace(/[\\/#?]/g, "-");
+            if (!sku || sku === "-") continue;
 
             // CORREGIDO: partitionKey = "elit", rowKey = sku
             const entity = {
@@ -352,8 +365,13 @@ app.http("providersElitImport", {
         const items = await fetchElitJson({ limit, offset });
 
         for (const it of items) {
-          const sku = String(it.codigo_producto || it.codigo || it.sku || "").trim();
+          // Limpiar SKU de caracteres problemáticos
+          let sku = String(it.codigo_producto || it.codigo || it.sku || "").trim();
           if (!sku) continue;
+          
+          // Remover caracteres no válidos para Azure Table Storage
+          sku = sku.replace(/[\\/#?]/g, "-");
+          if (!sku || sku === "-") continue;
 
           // CORREGIDO: partitionKey = "elit", rowKey = sku
           const entity = {
