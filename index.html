@@ -60,122 +60,95 @@
 
     <!-- FOOTER -->
     <footer class="siteFooter">
-      <div class="container">
-        <!-- Newsletter Section -->
+      <div class="footerContainer">
+        <!-- Newsletter Hero -->
         <div class="footerNewsletter">
           <h3>Querés estar al día con todo lo nuevo en tecnología?</h3>
           <p class="muted">Suscribite a nuestro newsletter para enterarte de todo eso y mucho más!</p>
           
-          <form id="newsletterForm" class="newsletterForm">
+          <form id="newsletterFormHero" class="newsletterFormHero">
             <input type="email" placeholder="Email" required />
             <button type="submit" class="btn btnPrimary">Enviar</button>
           </form>
         </div>
 
-        <!-- Main Footer Content -->
-        <div class="footerGrid">
-          <!-- Links Útiles -->
-          <div class="footerCol">
-            <h4>Links Útiles</h4>
-            <nav class="footerLinks">
-              <a href="/" data-link>Home</a>
-              <a href="/catalogo" data-link>Productos</a>
-              <a href="/tienda" data-link>Tienda</a>
-              <a href="/contacto" data-link>Contacto</a>
-              <a href="/nosotros" data-link>Sobre Nosotros</a>
-            </nav>
-          </div>
-
-          <!-- Contacto -->
-          <div class="footerCol">
-            <h4>Contactános</h4>
-            <div class="footerLinks">
-              <a href="tel:+5491168831802">+54 9 11 6883-1802</a>
-              <a href="tel:+5491168831802">+54 9 11 6883-1802</a>
-              <a href="mailto:valentin@toval-tech.com">valentin@toval-tech.com</a>
-              <div class="muted" style="margin-top: 8px;">Arenales 2288 CABA</div>
+        <!-- Main Footer Grid -->
+        <div class="footerMain">
+          <div class="footerGrid">
+            <!-- Links Útiles -->
+            <div class="footerCol">
+              <h4>Links Útiles</h4>
+              <nav class="footerLinks">
+                <a href="/" data-link>Home</a>
+                <a href="/catalogo" data-link>Productos</a>
+                <a href="/tienda" data-link>Tienda</a>
+                <a href="/contacto" data-link>Contacto</a>
+                <a href="/nosotros" data-link>Sobre Nosotros</a>
+              </nav>
             </div>
-          </div>
 
-          <!-- Newsletter (desktop) -->
-          <div class="footerCol">
-            <h4>Newsletter</h4>
-            <p class="muted" style="font-size: 13px; line-height: 1.5;">
-              Ingresá tu email para recibir novedades sobre productos y ofertas especiales.
-            </p>
-            <form id="newsletterForm2" class="newsletterFormCompact">
-              <input type="email" placeholder="Ingresá tu email..." required />
-              <button type="submit" class="btn btnPrimary">Enviar</button>
-            </form>
+            <!-- Contacto -->
+            <div class="footerCol">
+              <h4>Contactános</h4>
+              <div class="footerContact">
+                <a href="tel:+5491168831802">+54 9 11 6883-1802</a>
+                <a href="tel:+5491168831802">+54 9 11 6883-1802</a>
+                <a href="mailto:valentin@toval-tech.com">valentin@toval-tech.com</a>
+                <p class="muted">Arenales 2288 CABA</p>
+              </div>
+            </div>
+
+            <!-- Newsletter -->
+            <div class="footerCol">
+              <h4>Newsletter</h4>
+              <p class="muted footerText">
+                Ingresá tu email para recibir novedades sobre productos y ofertas especiales.
+              </p>
+              <form id="newsletterFormSide" class="newsletterFormSide">
+                <input type="email" placeholder="Ingresá tu email..." required />
+                <button type="submit" class="btn btnPrimary">Enviar</button>
+              </form>
+            </div>
           </div>
         </div>
 
-        <!-- Marcas que trabajamos -->
+        <!-- Marcas -->
         <div class="footerBrands">
           <h4>Marcas que trabajamos</h4>
           <div class="brandsGrid">
-            <div class="brandLogo" title="Dell EMC">
-              <span>DELL EMC</span>
-            </div>
-            <div class="brandLogo" title="Lenovo">
-              <span>LENOVO</span>
-            </div>
-            <div class="brandLogo" title="Cisco">
-              <span>CISCO</span>
-            </div>
-            <div class="brandLogo" title="APC by Schneider Electric">
-              <span>APC</span>
-            </div>
-            <div class="brandLogo" title="Asustor">
-              <span>ASUSTOR</span>
-            </div>
-            <div class="brandLogo" title="Seagate">
-              <span>SEAGATE</span>
-            </div>
-            <div class="brandLogo" title="Veeam">
-              <span>VEEAM</span>
-            </div>
-            <div class="brandLogo" title="Aruba Networks">
-              <span>ARUBA</span>
-            </div>
-            <div class="brandLogo" title="Microsoft">
-              <span>MICROSOFT</span>
-            </div>
-            <div class="brandLogo" title="Jabra">
-              <span>JABRA</span>
-            </div>
-            <div class="brandLogo" title="Pure Storage">
-              <span>PURE</span>
-            </div>
-            <div class="brandLogo" title="SanDisk">
-              <span>SANDISK</span>
-            </div>
-            <div class="brandLogo" title="Kingston">
-              <span>KINGSTON</span>
-            </div>
-            <div class="brandLogo" title="HP Enterprise">
-              <span>HPE</span>
-            </div>
-            <div class="brandLogo" title="Eaton">
-              <span>EATON</span>
-            </div>
-            <div class="brandLogo" title="Ubiquiti">
-              <span>UBIQUITI</span>
-            </div>
+            <div class="brandItem"><span>DELL EMC</span></div>
+            <div class="brandItem"><span>LENOVO</span></div>
+            <div class="brandItem"><span>CISCO</span></div>
+            <div class="brandItem"><span>APC</span></div>
+            <div class="brandItem"><span>ASUSTOR</span></div>
+            <div class="brandItem"><span>SEAGATE</span></div>
+            <div class="brandItem"><span>VEEAM</span></div>
+            <div class="brandItem"><span>ARUBA</span></div>
+            <div class="brandItem"><span>MICROSOFT</span></div>
+            <div class="brandItem"><span>JABRA</span></div>
+            <div class="brandItem"><span>PURE</span></div>
+            <div class="brandItem"><span>SANDISK</span></div>
+            <div class="brandItem"><span>KINGSTON</span></div>
+            <div class="brandItem"><span>HPE</span></div>
+            <div class="brandItem"><span>EATON</span></div>
+            <div class="brandItem"><span>UBIQUITI</span></div>
           </div>
         </div>
 
-        <!-- Copyright -->
+        <!-- Bottom -->
         <div class="footerBottom">
-          <p class="muted">
-            Copyright TovalTech - 27454570873 - 2026. Todos los derechos reservados.
-            <br class="hiddenMd" />
-            Defensa de las y los consumidores. Para reclamos 
-            <a href="https://www.argentina.gob.ar/produccion/defensadelconsumidor" target="_blank" rel="noopener">ingresá acá</a>
-          </p>
+          <div class="footerCopyright">
+            <p class="muted">
+              Copyright TovalTech - 27454570873 - 2026. Todos los derechos reservados.
+            </p>
+            <p class="muted">
+              Defensa de las y los consumidores. Para reclamos 
+              <a href="https://www.argentina.gob.ar/produccion/defensadelconsumidor" target="_blank" rel="noopener">ingresá acá</a>
+            </p>
+          </div>
           <div class="footerCredits">
-            <span class="muted">Diseñado con</span>
-            <a href="https://www.tiendanube.com" target="_blank" rel="noopener" class="muted">💙 Tiendanube</a>
+            <span class="muted">Diseñado con 💙</span>
+            <a href="https://www.tiendanube.com" target="_blank" rel="noopener" class="muted">Tiendanube</a>
           </div>
         </div>
       </div>
