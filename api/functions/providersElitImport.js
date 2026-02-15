@@ -317,7 +317,14 @@ app.http("providersElitImport", {
         const csvText = await fetchElitCsvRaw();
         const rows = parseCsvToObjects(csvText);
 
-        const csvSkuSet = new Set();
+        const fullCsvSkuSet = new Set();
+        for (const r of rows) {
+          let sku = String(r.codigo_producto || r.codigo || r.sku || "").trim();
+          if (!sku) continue;
+          sku = sku.replace(/[\\/#?]/g, "-");
+          if (!sku || sku === "-") continue;
+          fullCsvSkuSet.add(sku);
+        }
 
         for (let i = skip; i < rows.length && imported < max; i++) {
           const r = rows[i];
@@ -332,7 +339,6 @@ app.http("providersElitImport", {
           
           // Si el SKU queda vacío después de limpiar, skip
           if (!sku || sku === "-") continue;
-          csvSkuSet.add(sku);
 
           // CORREGIDO: partitionKey = "elit" (providerId), rowKey = sku
           const entity = {
@@ -369,10 +375,23 @@ app.http("providersElitImport", {
 
         const pruneOutsideCsv = (request.query.get("prune") || "1") === "1";
         const dedupeByName = (request.query.get("dedupeByName") || "1") === "1";
+        const forcePrune = request.query.get("forcePrune") === "1";
 
-        const prunedOutsideCsv = pruneOutsideCsv
-          ? await pruneRowsOutsideCsv(productsClient, csvSkuSet, dry, context)
-          : 0;
+        const importedWindowEnd = Math.min(rows.length, skip + max);
+        const isFullCsvWindow = skip === 0 && importedWindowEnd >= rows.length;
+
+        let prunedOutsideCsv = 0;
+        let pruneSkippedReason = null;
+
+        if (pruneOutsideCsv) {
+          if (isFullCsvWindow || forcePrune) {
+            prunedOutsideCsv = await pruneRowsOutsideCsv(productsClient, fullCsvSkuSet, dry, context);
+          } else {
+            pruneSkippedReason =
+              "prune omitido: import parcial (usa skip=0 y max>=totalCsvRows o forcePrune=1)";
+            context.log(`⚠️ ${pruneSkippedReason}`);
+          }
+        }
 
         const dedupeByNameRemoved = dedupeByName
           ? await pruneDuplicateNames(productsClient, dry, context)
@@ -392,6 +411,8 @@ app.http("providersElitImport", {
             errors,
             dedupeByNameRemoved,
             prunedOutsideCsv,
+            pruneSkippedReason,
+            isFullCsvWindow,
           }),
         };
       }
