@@ -1,0 +1,12 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "STORAGE_CONNECTION_STRING": "UseDevelopmentStorage=true",
+    "JWT_SECRET": "REEMPLAZAR_POR_UN_SECRETO_LARGO",
+    "CHAT_TABLE_NAME": "chatlog",
+    "PRODUCTS_TABLE_NAME": "Products",
+    "PROVIDERS_TABLE_NAME": "Providers"
+  }
+}

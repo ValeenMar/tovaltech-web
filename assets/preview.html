@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Previsualizador de Logos - TovalTech</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 40px;
+            font-size: 36px;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+            margin-bottom: 40px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+        
+        .card h2 {
+            font-size: 18px;
+            color: #333;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+        
+        .preview-light, .preview-dark {
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 80px;
+        }
+        
+        .preview-light {
+            background: #f5f5f5;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .preview-dark {
+            background: #1a1a1a;
+            border: 1px solid #333;
+        }
+        
+        .preview-light img, .preview-dark img {
+            max-width: 100%;
+            height: auto;
+        }
+        
+        .info {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #666;
+            margin-top: 8px;
+        }
+        
+        .button {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: 600;
+            margin-top: 12px;
+            text-align: center;
+            width: 100%;
+        }
+        
+        .button:hover {
+            opacity: 0.9;
+        }
+        
+        .instructions {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            margin-top: 40px;
+        }
+        
+        .instructions h2 {
+            color: #333;
+            margin-bottom: 16px;
+        }
+        
+        .instructions ol {
+            padding-left: 24px;
+            line-height: 1.8;
+            color: #555;
+        }
+        
+        .instructions code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+        
+        .favicon-preview {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        .favicon-size {
+            text-align: center;
+        }
+        
+        .favicon-size img {
+            display: block;
+            margin: 0 auto 4px;
+        }
+        
+        .favicon-size span {
+            font-size: 11px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎨 Previsualizador de Logos TovalTech</h1>
+        
+        <div class="grid">
+            <!-- Logo Principal -->
+            <div class="card">
+                <h2>Logo Principal (texto completo)</h2>
+                <div class="preview-light">
+                    <img src="tovaltech.svg" alt="Logo TovalTech">
+                </div>
+                <div class="preview-dark">
+                    <img src="tovaltech.svg" alt="Logo TovalTech">
+                </div>
+                <div class="info">
+                    <strong>Archivo:</strong> tovaltech.svg<br>
+                    <strong>Uso:</strong> Navbar principal<br>
+                    <strong>Tamaño:</strong> 200x60px
+                </div>
+            </div>
+            
+            <!-- Logo Alternativo 1 -->
+            <div class="card">
+                <h2>Logo Alternativo (con ícono)</h2>
+                <div class="preview-light">
+                    <img src="tovaltech-alt1.svg" alt="Logo TovalTech Alt">
+                </div>
+                <div class="preview-dark">
+                    <img src="tovaltech-alt1.svg" alt="Logo TovalTech Alt">
+                </div>
+                <div class="info">
+                    <strong>Archivo:</strong> tovaltech-alt1.svg<br>
+                    <strong>Uso:</strong> Versión compacta<br>
+                    <strong>Tamaño:</strong> 120x40px
+                </div>
+            </div>
+            
+            <!-- Favicon -->
+            <div class="card">
+                <h2>Favicon (iniciales TT)</h2>
+                <div class="preview-light">
+                    <div class="favicon-preview">
+                        <div class="favicon-size">
+                            <img src="favicon.svg" width="16" height="16" alt="Favicon 16">
+                            <span>16x16</span>
+                        </div>
+                        <div class="favicon-size">
+                            <img src="favicon.svg" width="32" height="32" alt="Favicon 32">
+                            <span>32x32</span>
+                        </div>
+                        <div class="favicon-size">
+                            <img src="favicon.svg" width="48" height="48" alt="Favicon 48">
+                            <span>48x48</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="preview-dark">
+                    <div class="favicon-preview">
+                        <div class="favicon-size">
+                            <img src="favicon.svg" width="16" height="16" alt="Favicon 16">
+                            <span>16x16</span>
+                        </div>
+                        <div class="favicon-size">
+                            <img src="favicon.svg" width="32" height="32" alt="Favicon 32">
+                            <span>32x32</span>
+                        </div>
+                        <div class="favicon-size">
+                            <img src="favicon.svg" width="48" height="48" alt="Favicon 48">
+                            <span>48x48</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="info">
+                    <strong>Archivo:</strong> favicon.svg<br>
+                    <strong>Uso:</strong> Ícono del navegador<br>
+                    <strong>Tamaños:</strong> Multi-resolución
+                </div>
+            </div>
+        </div>
+        
+        <div class="instructions">
+            <h2>📋 Cómo usar estos logos</h2>
+            <ol>
+                <li><strong>Elige tu logo favorito</strong> de las opciones arriba</li>
+                <li><strong>Renombra el archivo SVG elegido</strong> a <code>tovaltech.png</code> (después de convertirlo)</li>
+                <li><strong>Convierte el favicon.svg</strong> a <code>favicon.ico</code> usando:
+                    <ul style="margin-top: 8px;">
+                        <li><a href="https://favicon.io/favicon-converter/" target="_blank">favicon.io/favicon-converter</a></li>
+                        <li><a href="https://realfavicongenerator.net/" target="_blank">realfavicongenerator.net</a></li>
+                    </ul>
+                </li>
+                <li><strong>Coloca los archivos</strong> en <code>/assets/</code> en la raíz de tu proyecto</li>
+                <li><strong>Verifica</strong> que aparezcan correctamente en tu sitio</li>
+            </ol>
+            
+            <h2 style="margin-top: 24px;">🎨 Personalización</h2>
+            <p style="color: #555; line-height: 1.6;">
+                Estos son logos temporales generados automáticamente. Para un logo profesional personalizado:
+            </p>
+            <ul style="padding-left: 24px; margin-top: 8px; color: #555; line-height: 1.8;">
+                <li>Usa <a href="https://www.figma.com" target="_blank">Figma</a> (gratis) para diseñar</li>
+                <li>Contrata un diseñador en <a href="https://www.fiverr.com" target="_blank">Fiverr</a> ($5-50)</li>
+                <li>Usa <a href="https://www.canva.com" target="_blank">Canva</a> con templates de logo</li>
+            </ul>
+            
+            <h2 style="margin-top: 24px;">⚙️ Conversión SVG → PNG</h2>
+            <p style="color: #555; line-height: 1.6; margin-bottom: 12px;">
+                Si quieres convertir los SVG a PNG de alta calidad:
+            </p>
+            <div style="background: #f8f9fa; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 13px;">
+                # Online (fácil):<br>
+                https://www.svgtopng.com/<br>
+                https://cloudconvert.com/svg-to-png<br>
+                <br>
+                # Terminal (con imagemagick):<br>
+                convert -background none -density 300 tovaltech.svg -resize 400x120 tovaltech.png
+            </div>
+        </div>
+    </div>
+</body>
+</html>

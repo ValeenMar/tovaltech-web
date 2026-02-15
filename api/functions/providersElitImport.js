@@ -1,4 +1,14 @@
 // File: /api/functions/providersElitImport.js
+// Importa productos de ELIT a Azure Table Storage.
+// Requiere admin.
+//
+// Modos:
+// - JSON: /api/providersElitImport?source=json&max=1000&offset=0&limit=100&all=1
+// - CSV:  /api/providersElitImport?source=csv&max=5000&skip=0
+//
+// Nota: soporta compatibilidad con esquemas viejos, pero este import escribe el esquema recomendado:
+// Products: PartitionKey = providerId ("elit"), RowKey = sku
+
 const { app } = require("@azure/functions");
 const { TableClient } = require("@azure/data-tables");
 
@@ -19,6 +29,7 @@ function getProvidersClient() {
 function toNumber(v) {
   if (v === null || v === undefined || v === "") return null;
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
+
   let s = String(v).trim();
   if (!s) return null;
 
@@ -49,131 +60,200 @@ function normalizeCurrency(v) {
   return s.toUpperCase();
 }
 
-function parseCsvLine(line) {
-  // CSV con comas + soporte de comillas dobles.
-  const out = [];
-  let cur = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-
-    if (inQuotes) {
-      if (ch === '"') {
-        if (line[i + 1] === '"') {
-          cur += '"';
-          i++;
-        } else {
-          inQuotes = false;
-        }
-      } else {
-        cur += ch;
-      }
-      continue;
-    }
-
-    if (ch === '"') {
-      inQuotes = true;
-      continue;
-    }
-
-    if (ch === ",") {
-      out.push(cur);
-      cur = "";
-      continue;
-    }
-
-    cur += ch;
-  }
-
-  out.push(cur);
-  return out;
+function clamp(n, min, max) {
+  if (!Number.isFinite(n)) return min;
+  return Math.max(min, Math.min(max, n));
 }
 
-function parseCsvToObjects(text) {
-  const lines = text.split(/\r?\n/).filter((l) => l && l.trim().length);
-  if (!lines.length) return [];
-
-  const headers = parseCsvLine(lines[0]).map((h) => h.trim());
-  const rows = [];
-
-  for (let i = 1; i < lines.length; i++) {
-    const cols = parseCsvLine(lines[i]);
-    if (!cols.length) continue;
-
-    const obj = {};
-    for (let c = 0; c < headers.length; c++) obj[headers[c]] = cols[c] ?? "";
-    rows.push(obj);
-  }
-
-  return rows;
+function preview(v) {
+  if (!v) return null;
+  const s = String(v);
+  return s.length > 60 ? s.slice(0, 60) + "..." : s;
 }
 
-async function requireAdmin(request) {
-  const appPass = process.env.APP_PASSWORD;
-  if (!appPass) return true; // si no hay password configurada, no bloqueamos
+function requireAdmin(request) {
+  const expected = process.env.APP_PASSWORD;
+  if (!expected) throw new Error("Missing APP_PASSWORD env");
 
-  const headerPass = request.headers.get("x-app-password");
-  const qpPass = request.query.get("password");
-  let bodyPass = null;
+  const headerPass =
+    request.headers.get("x-app-password") ||
+    request.headers.get("x-admin-pass") ||
+    request.headers.get("x-tovaltech-admin") ||
+    null;
+
+  const auth = request.headers.get("authorization") || request.headers.get("Authorization") || "";
+  const bearer = auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : "";
+
+  const queryPass = request.query.get("password") || "";
+
+  const got = headerPass || bearer || queryPass;
+  if (!got || String(got).trim() !== String(expected).trim()) {
+    const err = new Error("Forbidden");
+    err.status = 403;
+    throw err;
+  }
+}
+
+async function ensureProvidersSeed() {
+  const providersClient = getProvidersClient();
+  // Seed ELIT provider if missing
+  try {
+    await providersClient.createTable();
+  } catch {}
 
   try {
-    const body = await request.json();
-    bodyPass = body?.password ?? null;
-  } catch (_) {
+    await providersClient.upsertEntity(
+      {
+        PartitionKey: "provider",
+        RowKey: "elit",
+        id: "elit",
+        name: "ELIT",
+        api: true,
+        currency: "USD",
+        fx: null,
+        ivaIncluded: false,
+        updatedAt: new Date().toISOString(),
+      },
+      "Merge"
+    );
+  } catch {
     // ignore
   }
-
-  const provided = headerPass || qpPass || bodyPass;
-  return provided === appPass;
 }
 
 function getElitCreds() {
-  const userId = process.env.ELIT_USER_ID;
-  const token = process.env.ELIT_TOKEN;
-  if (!userId) throw new Error("Missing ELIT_USER_ID");
-  if (!token) throw new Error("Missing ELIT_TOKEN");
-  return { userId, token };
+  const uid = process.env.ELIT_USER_ID;
+  const tok = process.env.ELIT_TOKEN;
+  if (!uid || !tok) throw new Error("Missing ELIT_USER_ID / ELIT_TOKEN env");
+  return { uid, tok };
 }
 
 async function fetchElitJson({ limit, offset }) {
-  const { userId, token } = getElitCreds();
-  const url =
-    `https://clientes.elit.com.ar/v1/api/productos` +
-    `?user_id=${encodeURIComponent(userId)}` +
-    `&token=${encodeURIComponent(token)}` +
-    `&limit=${encodeURIComponent(limit)}` +
-    `&offset=${encodeURIComponent(offset)}`;
+  const { uid, tok } = getElitCreds();
+  const url = `https://clientes.elit.com.ar/v1/api/productos?user_id=${encodeURIComponent(uid)}&token=${encodeURIComponent(tok)}&limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`;
 
-  const res = await fetch(url, { method: "GET" });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`ELIT JSON HTTP ${res.status}: ${text.slice(0, 200)}`);
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 15000);
+  const res = await fetch(url, { signal: ctrl.signal });
+  clearTimeout(t);
 
-  let json;
-  try {
-    json = JSON.parse(text);
-  } catch (e) {
-    throw new Error(`ELIT JSON parse error: ${String(e?.message || e)} | body: ${text.slice(0, 200)}`);
-  }
+  if (!res.ok) throw new Error(`ELIT JSON fetch failed: ${res.status}`);
+  const data = await res.json();
 
-  // el formato exacto puede variar
-  const items = json?.items || json?.productos || json?.data || [];
-  if (!Array.isArray(items)) return [];
+  const items = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
   return items;
 }
 
-async function fetchElitCsvRaw() {
-  const { userId, token } = getElitCreds();
-  const url =
-    `https://clientes.elit.com.ar/v1/api/productos/csv` +
-    `?user_id=${encodeURIComponent(userId)}` +
-    `&token=${encodeURIComponent(token)}`;
+async function fetchElitCsvText() {
+  const { uid, tok } = getElitCreds();
+  const url = `https://clientes.elit.com.ar/v1/api/productos/csv?user_id=${encodeURIComponent(uid)}&token=${encodeURIComponent(tok)}`;
 
-  const res = await fetch(url, { method: "GET" });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`ELIT CSV HTTP ${res.status}: ${text.slice(0, 200)}`);
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 20000);
+  const res = await fetch(url, { signal: ctrl.signal });
+  clearTimeout(t);
 
-  return text;
+  if (!res.ok) throw new Error(`ELIT CSV fetch failed: ${res.status}`);
+  return await res.text();
+}
+
+// Simple CSV parse (line-based). Asume que ELIT no trae newlines dentro de campos.
+function parseCsvToObjects(csv) {
+  const lines = String(csv || "").split(/\r?\n/).filter(Boolean);
+  if (!lines.length) return [];
+
+  // Split CSV honoring quotes
+  const splitCsvLine = (line) => {
+    const out = [];
+    let cur = "";
+    let inQ = false;
+
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (inQ) {
+        if (c === '"') {
+          const nx = line[i + 1];
+          if (nx === '"') {
+            cur += '"';
+            i++;
+          } else {
+            inQ = false;
+          }
+        } else {
+          cur += c;
+        }
+        continue;
+      }
+
+      if (c === '"') inQ = true;
+      else if (c === ",") {
+        out.push(cur);
+        cur = "";
+      } else {
+        cur += c;
+      }
+    }
+    out.push(cur);
+    return out;
+  };
+
+  const header = splitCsvLine(lines[0]).map((h) => String(h || "").trim());
+  const idx = (name) => header.findIndex((h) => h.toLowerCase() === name.toLowerCase());
+
+  const idIx = idx("id");
+  const nameIx = idx("nombre");
+  const brandIx = idx("marca");
+  const priceIx = idx("precio");
+  const currencyIx = idx("moneda");
+  const ivaIx = idx("iva");
+  const imgIx = idx("imagen");
+  const thumbIx = idx("miniatura");
+  const stockIx = idx("stock");
+
+  const out = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = splitCsvLine(lines[i]);
+
+    const sku = idIx >= 0 ? String(cols[idIx] || "").trim() : "";
+    if (!sku) continue;
+
+    out.push({
+      sku,
+      name: nameIx >= 0 ? String(cols[nameIx] || "").trim() : null,
+      brand: brandIx >= 0 ? String(cols[brandIx] || "").trim() : null,
+      price: toNumber(priceIx >= 0 ? cols[priceIx] : null),
+      currency: normalizeCurrency(currencyIx >= 0 ? cols[currencyIx] : null),
+      ivaRate: toNumber(ivaIx >= 0 ? cols[ivaIx] : null),
+      imageUrl: imgIx >= 0 ? String(cols[imgIx] || "").trim() : null,
+      thumbUrl: thumbIx >= 0 ? String(cols[thumbIx] || "").trim() : null,
+      stock: toNumber(stockIx >= 0 ? cols[stockIx] : null),
+    });
+  }
+
+  return out;
+}
+
+async function upsertMany(productsClient, entities, errors) {
+  if (!entities.length) return;
+
+  // Table transactions: máx 100 entidades y misma PartitionKey
+  const BATCH = 100;
+  for (let i = 0; i < entities.length; i += BATCH) {
+    const batch = entities.slice(i, i + BATCH);
+
+    try {
+      await productsClient.submitTransaction(batch.map((e) => ["upsert", e, "Merge"]));
+    } catch (err) {
+      // Fallback individual para no perder todo el lote
+      for (const e of batch) {
+        try {
+          await productsClient.upsertEntity(e, "Merge");
+        } catch (e2) {
+          errors.push({ sku: e.RowKey, error: String(e2?.message || e2) });
+        }
+      }
+    }
+  }
 }
 
 app.http("providersElitImport", {
@@ -181,163 +261,160 @@ app.http("providersElitImport", {
   authLevel: "anonymous",
   handler: async (request, context) => {
     try {
-      const okAdmin = await requireAdmin(request);
-      if (!okAdmin) {
-        return {
-          status: 401,
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ ok: false, error: "Unauthorized" }),
-        };
-      }
+      requireAdmin(request);
 
-      const source = (request.query.get("source") || "json").toLowerCase(); // "json" | "csv"
-      const dry = (request.query.get("dry") || "").toLowerCase() === "1";
-
+      const source = (request.query.get("source") || "json").trim().toLowerCase();
       const productsClient = getProductsClient();
-      const providersClient = getProvidersClient();
 
-      // upsert provider
-      if (!dry) {
-        await providersClient.upsertEntity(
-          {
-            PartitionKey: "provider",
-            RowKey: "elit",
-            id: "elit",
-            name: "ELIT",
-            api: true,
-            currency: "USD",
-            // fx lo dejamos como esté (si ya existe) o 0
-            fx: 0,
-            ivaIncluded: false,
-            notes: "Importado desde ELIT",
-            updatedAt: new Date().toISOString(),
-          },
-          "Merge"
-        );
-      }
+      // Ensure products table exists
+      try {
+        await productsClient.createTable();
+      } catch {}
 
-      let imported = 0;
+      await ensureProvidersSeed();
+
       const errors = [];
+      const startedAt = new Date().toISOString();
 
       if (source === "csv") {
-        // CSV trae imágenes + IVA
-        const skip = Math.max(0, Math.floor(toNumber(request.query.get("skip")) || 0));
-        let max = Math.floor(toNumber(request.query.get("max")) || 0);
-        if (!max || max < 1) max = 5000; // safety
-        if (max > 20000) max = 20000;
+        const max = clamp(toNumber(request.query.get("max")) ?? 5000, 1, 50000);
+        const skip = clamp(toNumber(request.query.get("skip")) ?? 0, 0, 10000000);
 
-        const csvText = await fetchElitCsvRaw();
+        const csvText = await fetchElitCsvText();
         const rows = parseCsvToObjects(csvText);
 
-        for (let i = skip; i < rows.length && imported < max; i++) {
-          const r = rows[i];
+        const slice = rows.slice(skip, skip + max);
 
-          // nombres de columnas reales (según el CSV que compartiste)
-          const sku = String(r.codigo_producto || r.codigo || r.sku || "").trim();
-          if (!sku) continue;
+        const entities = slice.map((r) => ({
+          PartitionKey: "elit",
+          RowKey: String(r.sku),
 
-          const entity = {
-            PartitionKey: "product",
-            RowKey: sku,
-            sku,
-            providerId: "elit",
-            name: (r.nombre || r.descripcion || "").trim(),
-            brand: (r.marca || "").trim(),
-            price: toNumber(r.precio),
-            currency: normalizeCurrency(r.moneda) || "USD",
-            ivaRate: toNumber(r.iva),
-            ivaIncluded: String(r.iva_incluido || "").trim(),
-            imageUrl: (r.imagen || "").trim() || null,
-            thumbUrl: (r.miniatura || "").trim() || null,
-            category: (r.rubro || "").trim() || null,
-            subcategory: (r.sub_rubro || "").trim() || null,
-            model: (r.modelo || "").trim() || null,
-            partNumber: (r.part_number || "").trim() || null,
-            updatedAt: new Date().toISOString(),
-          };
+          providerId: "elit",
+          sku: String(r.sku),
+          name: r.name,
+          brand: r.brand,
+          price: r.price,
+          currency: r.currency,
+          ivaRate: r.ivaRate,
+          imageUrl: r.imageUrl || null,
+          thumbUrl: r.thumbUrl || null,
+          stock: r.stock,
+          updatedAt: new Date().toISOString(),
+        }));
 
-          if (!dry) {
-            try {
-              await productsClient.upsertEntity(entity, "Merge");
-              imported++;
-            } catch (e) {
-              errors.push({ sku, error: String(e?.message || e) });
-            }
-          } else {
-            imported++;
-          }
-        }
+        await upsertMany(productsClient, entities, errors);
 
         return {
           status: 200,
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
+          jsonBody: {
             ok: true,
+            provider: "elit",
             source: "csv",
-            imported,
-            skip,
-            max,
-            totalCsvRows: rows.length,
-            nextSkip: skip + imported,
+            imported: entities.length - errors.length,
+            attempted: entities.length,
             errors,
-          }),
+            startedAt,
+            finishedAt: new Date().toISOString(),
+            nextSkip: skip + entities.length,
+            hint: "Si querés traer más, llamá de nuevo con skip=nextSkip y/o subí max.",
+          },
         };
       }
 
-      // JSON (sin imágenes)
-      const limit = Math.max(1, Math.min(5000, Math.floor(toNumber(request.query.get("limit")) || 500)));
-      const offset = Math.max(0, Math.floor(toNumber(request.query.get("offset")) || 0));
+      // source === json
+      const max = clamp(toNumber(request.query.get("max")) ?? 1000, 1, 50000);
+      const pageSize = clamp(toNumber(request.query.get("limit")) ?? 100, 1, 500);
+      let offset = clamp(toNumber(request.query.get("offset")) ?? 0, 0, 10000000);
 
-      const items = await fetchElitJson({ limit, offset });
+      const all = String(request.query.get("all") || "").trim() === "1" || String(request.query.get("all") || "").toLowerCase() === "true";
+      const maxPages = clamp(toNumber(request.query.get("pages")) ?? (all ? 999999 : 1), 1, 999999);
 
-      for (const it of items) {
-        const sku = String(it.codigo_producto || it.codigo || it.sku || "").trim();
-        if (!sku) continue;
+      let imported = 0;
+      let attempted = 0;
+      let pages = 0;
 
-        const entity = {
-          PartitionKey: "product",
-          RowKey: sku,
-          sku,
-          providerId: "elit",
-          name: it.nombre || it.descripcion || null,
-          brand: it.marca || null,
-          price: toNumber(it.precio ?? it.price),
-          currency: normalizeCurrency(it.moneda ?? it.currency) || "USD",
-          updatedAt: new Date().toISOString(),
-        };
+      while (imported < max && pages < maxPages) {
+        pages++;
 
-        if (!dry) {
-          try {
-            await productsClient.upsertEntity(entity, "Merge");
-            imported++;
-          } catch (e) {
-            errors.push({ sku, error: String(e?.message || e) });
-          }
-        } else {
-          imported++;
-        }
+        const remaining = max - imported;
+        const thisLimit = Math.min(pageSize, remaining);
+
+        const items = await fetchElitJson({ limit: thisLimit, offset });
+        if (!items.length) break;
+
+        const entities = items
+          .map((p) => {
+            const sku = p?.id ?? p?.sku ?? p?.codigo_producto ?? null;
+            if (!sku) return null;
+
+            return {
+              PartitionKey: "elit",
+              RowKey: String(sku),
+
+              providerId: "elit",
+              sku: String(sku),
+              name: p?.nombre ?? p?.name ?? null,
+              brand: p?.marca ?? p?.brand ?? null,
+              price: toNumber(p?.precio ?? p?.price),
+              currency: normalizeCurrency(p?.moneda ?? p?.currency),
+              ivaRate: toNumber(p?.iva ?? p?.ivaRate),
+              imageUrl: p?.imagen ?? p?.imageUrl ?? p?.image ?? null,
+              thumbUrl: p?.miniatura ?? p?.thumbUrl ?? p?.thumbnail ?? null,
+              stock: toNumber(p?.stock),
+              updatedAt: new Date().toISOString(),
+            };
+          })
+          .filter(Boolean);
+
+        attempted += entities.length;
+        await upsertMany(productsClient, entities, errors);
+
+        imported += (entities.length - errors.length);
+
+        // avanzar offset: si ELIT devuelve menos que pedimos, asumimos fin.
+        offset += items.length;
+        if (items.length < thisLimit) break;
       }
 
       return {
         status: 200,
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+        jsonBody: {
           ok: true,
+          provider: "elit",
           source: "json",
           imported,
-          limit,
-          offset,
-          received: Array.isArray(items) ? items.length : 0,
-          nextOffset: offset + (Array.isArray(items) ? items.length : 0),
+          attempted,
           errors,
-        }),
+          startedAt,
+          finishedAt: new Date().toISOString(),
+          pages,
+          nextOffset: offset,
+          used: {
+            max,
+            pageSize,
+            all,
+            maxPages,
+          },
+          hint: all
+            ? "Si querés seguir trayendo, llamá de nuevo con offset=nextOffset (o usá source=csv para bulk)."
+            : "Para traer más de una página, usá all=1 o pages=N, o llamá varias veces con offset.",
+        },
       };
     } catch (err) {
+      const status = err?.status || 500;
       context.error(err);
       return {
-        status: 500,
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ok: false, error: String(err?.message || err) }),
+        status,
+        jsonBody: {
+          ok: false,
+          error: String(err?.message || err),
+          debug: {
+            hasAppPassword: !!process.env.APP_PASSWORD,
+            hasElitUserId: !!process.env.ELIT_USER_ID,
+            hasElitToken: !!process.env.ELIT_TOKEN,
+            storageConnPreview: preview(process.env.STORAGE_CONNECTION_STRING),
+          },
+        },
       };
     }
   },
