@@ -273,11 +273,7 @@ async function fetchElitJson({ limit = 500, offset = 0 }) {
   return Array.isArray(data.items) ? data.items : [];
 }
 
-app.http("providersElitImport", {
-  methods: ["POST"],
-  authLevel: "anonymous",
-  route: "providers/elit/import",
-  handler: async (request, context) => {
+const handleProvidersElitImport = async (request, context) => {
     try {
       const productsClient = getProductsClient();
       const providersClient = getProvidersClient();
@@ -567,5 +563,18 @@ app.http("providersElitImport", {
         body: JSON.stringify({ ok: false, error: String(err?.message || err) }),
       };
     }
-  },
+};
+
+app.http("providersElitImport", {
+  methods: ["GET", "POST"],
+  authLevel: "anonymous",
+  route: "providers/elit/import",
+  handler: handleProvidersElitImport,
+});
+
+app.http("providersElitImportLegacy", {
+  methods: ["GET", "POST"],
+  authLevel: "anonymous",
+  route: "providersElitImport",
+  handler: handleProvidersElitImport,
 });
