@@ -1,5 +1,6 @@
 // File: /api/functions/providersNewBytesImport.js
 // Import de productos desde New Bytes API
+// Documentación: https://developers.nb.com.ar
 
 const { app } = require("@azure/functions");
 const { TableClient } = require("@azure/data-tables");
@@ -19,70 +20,33 @@ function getProvidersClient() {
 function toNumber(v) {
   if (v === null || v === undefined || v === "") return null;
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
-  let s = String(v).trim();
-  if (!s) return null;
-
-  s = s.replace(/\s+/g, "");
-  const hasComma = s.includes(",");
-  const hasDot = s.includes(".");
-
-  if (hasComma && hasDot) {
-    if (s.lastIndexOf(",") > s.lastIndexOf(".")) {
-      s = s.replace(/\./g, "").replace(",", ".");
-    } else {
-      s = s.replace(/,/g, "");
-    }
-  } else if (hasComma && !hasDot) {
-    s = s.replace(",", ".");
-  }
-
-  const n = Number(s);
+  const n = Number(v);
   return Number.isFinite(n) ? n : null;
-}
-
-function normalizeCurrency(v) {
-  if (v === null || v === undefined || v === "") return null;
-  const s = String(v).trim().toUpperCase();
-  if (!s) return null;
-  if (s === "USD" || s === "DOLAR" || s === "U$S") return "USD";
-  if (s === "ARS" || s === "PESOS" || s === "$") return "ARS";
-  return s;
 }
 
 /**
  * Fetch productos desde New Bytes API
  */
-async function fetchNewBytesProducts() {
-  const token = process.env.NEWBYTES_TOKEN || "";
-  
-  if (!token) {
-    throw new Error("Falta variable NEWBYTES_TOKEN en Azure");
-  }
-
-  // 🔧 AJUSTAR ESTA URL según la documentación de New Bytes
-  const url = `https://api.nb.com.ar/v1/productos`;
+async function fetchNewBytesProducts(token) {
+  const url = `https://api.nb.com.ar/v1/prices`;
   
   const res = await fetch(url, {
     method: "GET",
     headers: {
-      // 🔧 AJUSTAR según cómo autentican
       "Authorization": `Bearer ${token}`,
       "Accept": "application/json",
     },
   });
 
   if (!res.ok) {
-    throw new Error(`New Bytes API fail: ${res.status} ${res.statusText}`);
+    const text = await res.text();
+    throw new Error(`New Bytes API fail: ${res.status} - ${text}`);
   }
 
   const data = await res.json();
   
-  // 🔧 AJUSTAR según la estructura de respuesta
-  // Opciones comunes:
-  // - data.items
-  // - data.products
-  // - data (si es array directo)
-  return Array.isArray(data) ? data : data.items || data.products || [];
+  // Devuelve array directo
+  return Array.isArray(data) ? data : [];
 }
 
 app.http("providersNewBytesImport", {
@@ -99,6 +63,20 @@ app.http("providersNewBytesImport", {
       if (!maxTotal || maxTotal < 1) maxTotal = 5000;
       if (maxTotal > 10000) maxTotal = 10000;
 
+      // Obtener token de env
+      const token = process.env.NEWBYTES_TOKEN || "";
+      
+      if (!token) {
+        return {
+          status: 400,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ 
+            ok: false, 
+            error: "Falta configurar NEWBYTES_TOKEN en Azure" 
+          }),
+        };
+      }
+
       // Upsert provider New Bytes
       if (!dry) {
         await providersClient.upsertEntity(
@@ -108,9 +86,9 @@ app.http("providersNewBytesImport", {
             id: "newbytes",
             name: "New Bytes",
             api: true,
-            currency: "ARS", // 🔧 Ajustar según la moneda
+            currency: "USD", // New Bytes trabaja en USD
             fx: 0,
-            ivaIncluded: false, // 🔧 Ajustar según si incluye IVA
+            ivaIncluded: false,
             notes: "Importado desde New Bytes API",
             updatedAt: new Date().toISOString(),
           },
@@ -120,7 +98,7 @@ app.http("providersNewBytesImport", {
 
       context.log("🔄 Fetching productos from New Bytes...");
       
-      const items = await fetchNewBytesProducts();
+      const items = await fetchNewBytesProducts(token);
       
       context.log(`📦 Recibidos ${items.length} items`);
 
@@ -130,22 +108,20 @@ app.http("providersNewBytesImport", {
       for (const it of items) {
         if (imported >= maxTotal) break;
 
-        // 🔧 AJUSTAR nombres de campos según la API de New Bytes
-        // Campos comunes: codigo, sku, code, productCode, etc.
-        let sku = String(
-          it.codigo || 
-          it.sku || 
-          it.code || 
-          it.productCode || 
-          it.id || 
-          ""
-        ).trim();
+        // SKU viene en el campo "sku" o "id"
+        let sku = String(it.sku || it.id || "").trim();
         
-        if (!sku) continue;
+        if (!sku) {
+          errors.push({ id: it.id, error: "Missing SKU" });
+          continue;
+        }
 
         // Sanitizar SKU (remover caracteres problemáticos)
         sku = sku.replace(/[\\/#?]/g, "-");
-        if (!sku || sku === "-") continue;
+        if (!sku || sku === "-") {
+          errors.push({ id: it.id, error: "Invalid SKU after sanitization" });
+          continue;
+        }
 
         const entity = {
           partitionKey: "newbytes", // Usar providerId como PK
@@ -153,16 +129,14 @@ app.http("providersNewBytesImport", {
           sku,
           providerId: "newbytes",
           
-          // 🔧 MAPEAR campos según la API
-          name: it.nombre || it.descripcion || it.name || it.description || null,
-          brand: it.marca || it.brand || null,
-          price: toNumber(it.precio || it.price || it.precioLista),
-          currency: normalizeCurrency(it.moneda || it.currency) || "ARS",
+          // Campos de New Bytes
+          name: it.name || it.sku || sku,
+          price: toNumber(it.value || it.price || it.finalPrice),
+          currency: "USD",
+          ivaRate: toNumber(it.iva),
           
-          // Campos opcionales (mapear si existen)
-          imageUrl: it.imagen || it.image || it.imageUrl || null,
-          category: it.categoria || it.category || it.rubro || null,
-          stock: toNumber(it.stock || it.cantidad),
+          // Campos opcionales
+          currencyQuote: toNumber(it.currencyQuote), // Cotización USD/ARS
           
           updatedAt: new Date().toISOString(),
         };
@@ -190,7 +164,8 @@ app.http("providersNewBytesImport", {
           imported,
           total: items.length,
           maxRequested: maxTotal,
-          errors,
+          errors: errors.slice(0, 10), // Solo primeros 10 errores
+          errorsCount: errors.length,
         }),
       };
     } catch (err) {
