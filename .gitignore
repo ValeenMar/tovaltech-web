@@ -61,8 +61,6 @@ typings/
 # dotenv environment variables file
 .env
 .env.test
-.env.local
-.env.*.local
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -104,5 +102,18 @@ node_modules/
 api/node_modules/
 api/local.settings.json
 
-# Node
-node_modules/
+# WebDAV files (VS Code remote)
+*.dav
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
