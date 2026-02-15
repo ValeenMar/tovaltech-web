@@ -109,6 +109,113 @@ function parseCsvToObjects(text) {
   return rows;
 }
 
+function normalizeKey(v) {
+  return String(v || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function scoreEntityQuality(p) {
+  let score = 0;
+  if (p.imageUrl) score += 3;
+  if (p.thumbUrl) score += 2;
+  if (p.ivaRate != null && p.ivaRate !== 0) score += 2;
+  if (p.price != null && p.price > 0) score += 1;
+  return score;
+}
+
+async function pruneRowsOutsideCsv(productsClient, skuSet, dry, context) {
+  const toDelete = [];
+  const iter = productsClient.listEntities({
+    queryOptions: { filter: "(PartitionKey eq 'elit' or providerId eq 'elit')" },
+  });
+
+  for await (const e of iter) {
+    const sku = String(e.rowKey ?? e.RowKey ?? e.sku ?? "").trim();
+    if (!sku) continue;
+    if (skuSet.has(sku)) continue;
+
+    const partitionKey = String(e.partitionKey ?? e.PartitionKey ?? "").trim();
+    const rowKey = String(e.rowKey ?? e.RowKey ?? "").trim();
+    if (!partitionKey || !rowKey) continue;
+
+    toDelete.push({ partitionKey, rowKey, sku });
+  }
+
+  for (const e of toDelete) {
+    if (!dry) {
+      await productsClient.deleteEntity(e.partitionKey, e.rowKey);
+    }
+  }
+
+  context.log(`🧹 ELIT prune: ${toDelete.length} filas fuera del CSV`);
+  return toDelete.length;
+}
+
+async function pruneDuplicateNames(productsClient, dry, context) {
+  const groups = new Map();
+  const iter = productsClient.listEntities({
+    queryOptions: { filter: "(PartitionKey eq 'elit' or providerId eq 'elit')" },
+  });
+
+  for await (const e of iter) {
+    const partitionKey = String(e.partitionKey ?? e.PartitionKey ?? "").trim();
+    const rowKey = String(e.rowKey ?? e.RowKey ?? "").trim();
+    if (!partitionKey || !rowKey) continue;
+
+    const name = String(e.name ?? e.nombre ?? "").trim();
+    const brand = String(e.brand ?? e.marca ?? "").trim();
+    const key = `${normalizeKey(brand)}|${normalizeKey(name)}`;
+    if (!name || key === "|") continue;
+
+    const row = {
+      partitionKey,
+      rowKey,
+      sku: String(e.sku ?? rowKey).trim(),
+      name,
+      brand,
+      imageUrl: e.imageUrl ?? e.image ?? null,
+      thumbUrl: e.thumbUrl ?? e.thumbnail ?? e.miniatura ?? null,
+      ivaRate: toNumber(e.ivaRate ?? e.iva),
+      price: toNumber(e.price),
+      updatedAt: String(e.updatedAt ?? e.timestamp ?? ""),
+    };
+
+    const arr = groups.get(key) || [];
+    arr.push(row);
+    groups.set(key, arr);
+  }
+
+  const toDelete = [];
+
+  for (const rows of groups.values()) {
+    if (rows.length < 2) continue;
+
+    rows.sort((a, b) => {
+      const diff = scoreEntityQuality(b) - scoreEntityQuality(a);
+      if (diff !== 0) return diff;
+      const at = Date.parse(a.updatedAt || "") || 0;
+      const bt = Date.parse(b.updatedAt || "") || 0;
+      if (bt !== at) return bt - at;
+      return String(a.sku).localeCompare(String(b.sku));
+    });
+
+    toDelete.push(...rows.slice(1));
+  }
+
+  for (const e of toDelete) {
+    if (!dry) {
+      await productsClient.deleteEntity(e.partitionKey, e.rowKey);
+    }
+  }
+
+  context.log(`🧽 ELIT dedupe nombre: ${toDelete.length} filas duplicadas`);
+  return toDelete.length;
+}
+
 async function fetchElitCsvRaw() {
   const userId = process.env.ELIT_USER_ID || "";
   const token = process.env.ELIT_TOKEN || "";
@@ -166,16 +273,12 @@ async function fetchElitJson({ limit = 500, offset = 0 }) {
   return Array.isArray(data.items) ? data.items : [];
 }
 
-app.http("providersElitImport", {
-  methods: ["POST"],
-  authLevel: "anonymous",
-  route: "providers/elit/import",
-  handler: async (request, context) => {
+const handleProvidersElitImport = async (request, context) => {
     try {
       const productsClient = getProductsClient();
       const providersClient = getProvidersClient();
 
-      const source = (request.query.get("source") || "json").toLowerCase();
+      const source = (request.query.get("source") || "csv").toLowerCase();
       const dry = request.query.get("dry") === "1";
 
       // Upsert provider ELIT (CORREGIDO: partitionKey/rowKey en minúsculas)
@@ -209,6 +312,15 @@ app.http("providersElitImport", {
 
         const csvText = await fetchElitCsvRaw();
         const rows = parseCsvToObjects(csvText);
+
+        const fullCsvSkuSet = new Set();
+        for (const r of rows) {
+          let sku = String(r.codigo_producto || r.codigo || r.sku || "").trim();
+          if (!sku) continue;
+          sku = sku.replace(/[\\/#?]/g, "-");
+          if (!sku || sku === "-") continue;
+          fullCsvSkuSet.add(sku);
+        }
 
         for (let i = skip; i < rows.length && imported < max; i++) {
           const r = rows[i];
@@ -257,6 +369,30 @@ app.http("providersElitImport", {
           }
         }
 
+        const pruneOutsideCsv = (request.query.get("prune") || "1") === "1";
+        const dedupeByName = (request.query.get("dedupeByName") || "1") === "1";
+        const forcePrune = request.query.get("forcePrune") === "1";
+
+        const importedWindowEnd = Math.min(rows.length, skip + max);
+        const isFullCsvWindow = skip === 0 && importedWindowEnd >= rows.length;
+
+        let prunedOutsideCsv = 0;
+        let pruneSkippedReason = null;
+
+        if (pruneOutsideCsv) {
+          if (isFullCsvWindow || forcePrune) {
+            prunedOutsideCsv = await pruneRowsOutsideCsv(productsClient, fullCsvSkuSet, dry, context);
+          } else {
+            pruneSkippedReason =
+              "prune omitido: import parcial (usa skip=0 y max>=totalCsvRows o forcePrune=1)";
+            context.log(`⚠️ ${pruneSkippedReason}`);
+          }
+        }
+
+        const dedupeByNameRemoved = dedupeByName
+          ? await pruneDuplicateNames(productsClient, dry, context)
+          : 0;
+
         return {
           status: 200,
           headers: { "content-type": "application/json" },
@@ -269,9 +405,14 @@ app.http("providersElitImport", {
             totalCsvRows: rows.length,
             nextSkip: skip + imported,
             errors,
+            dedupeByNameRemoved,
+            prunedOutsideCsv,
+            pruneSkippedReason,
+            isFullCsvWindow,
           }),
         };
       }
+
 
       // JSON con PAGINADO AUTOMÁTICO
       const all = request.query.get("all") === "1";
@@ -422,5 +563,18 @@ app.http("providersElitImport", {
         body: JSON.stringify({ ok: false, error: String(err?.message || err) }),
       };
     }
-  },
+};
+
+app.http("providersElitImport", {
+  methods: ["GET", "POST"],
+  authLevel: "anonymous",
+  route: "providers/elit/import",
+  handler: handleProvidersElitImport,
+});
+
+app.http("providersElitImportLegacy", {
+  methods: ["GET", "POST"],
+  authLevel: "anonymous",
+  route: "providersElitImport",
+  handler: handleProvidersElitImport,
 });

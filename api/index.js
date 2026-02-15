@@ -10,3 +10,4 @@ require("./functions/getProviders");
 require("./functions/providersElitImport");
 require("./functions/health");
 require("./functions/users"); // ← NUEVA LÍNEA
+require("./functions/providersElitSyncCron");
