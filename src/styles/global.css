@@ -29,13 +29,33 @@ body{
   margin:0;
   font-family: var(--font-sans);
   color: var(--text);
+  min-height: 100vh;
 
-  background:
+  /* Fondo base fijo */
+  background-color: var(--bg0);
+  background-attachment: fixed;
+  background-image:
     radial-gradient(900px 500px at 18% 0%, rgba(0,229,255,.10), transparent 60%),
     radial-gradient(700px 450px at 78% 15%, rgba(140,90,255,.08), transparent 55%),
-    repeating-linear-gradient(0deg, rgba(255,255,255,.03) 0px, rgba(255,255,255,.03) 1px, transparent 1px, transparent 72px),
-    repeating-linear-gradient(90deg, rgba(255,255,255,.03) 0px, rgba(255,255,255,.03) 1px, transparent 1px, transparent 72px),
-    linear-gradient(180deg, var(--bg0), var(--bg1));
+    repeating-linear-gradient(0deg, rgba(255,255,255,.02) 0px, rgba(255,255,255,.02) 1px, transparent 1px, transparent 72px),
+    repeating-linear-gradient(90deg, rgba(255,255,255,.02) 0px, rgba(255,255,255,.02) 1px, transparent 1px, transparent 72px),
+    linear-gradient(180deg, var(--bg0), var(--bg1) 50%, var(--bg0));
+  
+  /* Overlay sutil que se repite */
+  position: relative;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: 
+    radial-gradient(circle at 50% 50%, rgba(0,229,255,.03) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: -1;
 }
 
 a{ color:inherit; text-decoration:none; }
@@ -466,42 +486,81 @@ tbody tr:hover{ background: rgba(0,229,255,.06); }
 /* Product cards */
 .productsGrid{
   display:grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 12px;
-  margin-top: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 18px;
+  margin-top: 24px;
+  padding-bottom: 60px;
 }
 
 .pCard{
-  border: 1px solid rgba(255,255,255,.10);
-  background: rgba(0,0,0,.18);
-  border-radius: var(--r);
+  border: 1px solid rgba(255,255,255,.08);
+  background: linear-gradient(135deg, rgba(0,0,0,.25) 0%, rgba(0,0,0,.15) 100%);
+  backdrop-filter: blur(12px);
+  border-radius: calc(var(--r) + 2px);
   overflow:hidden;
-  box-shadow: 0 18px 60px rgba(0,0,0,.40);
-  transition: all 0.2s;
+  box-shadow: 
+    0 4px 12px rgba(0,0,0,.3),
+    0 8px 24px rgba(0,0,0,.2),
+    inset 0 1px 0 rgba(255,255,255,.05);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.pCard::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(600px at var(--x, 50%) var(--y, 50%), rgba(0,229,255,.08) 0%, transparent 60%);
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
 }
 
 .pCard:hover {
-  border-color: rgba(0,229,255,.25);
-  box-shadow: 0 20px 70px rgba(0,229,255,.15);
-  transform: translateY(-2px);
+  border-color: rgba(0,229,255,.35);
+  box-shadow: 
+    0 8px 24px rgba(0,0,0,.4),
+    0 16px 48px rgba(0,229,255,.12),
+    inset 0 1px 0 rgba(255,255,255,.1);
+  transform: translateY(-4px) scale(1.01);
+}
+
+.pCard:hover::before {
+  opacity: 1;
 }
 
 .pMedia{
-  height: 150px;
+  height: 180px;
   display:flex;
   align-items:center;
   justify-content:center;
-  background: rgba(255,255,255,.02);
+  background: 
+    linear-gradient(135deg, rgba(255,255,255,.03) 0%, rgba(255,255,255,.01) 100%);
   border-bottom: 1px solid rgba(255,255,255,.08);
   position: relative;
+  overflow: hidden;
+}
+
+.pMedia::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 0%, rgba(0,0,0,.2) 100%);
+  pointer-events: none;
 }
 
 .pImg{
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  padding: 12px;
   position: absolute;
   inset: 0;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.pCard:hover .pImg {
+  transform: scale(1.08);
 }
 
 .pPh{
@@ -511,52 +570,72 @@ tbody tr:hover{ background: rgba(0,229,255,.06); }
   align-items:center;
   justify-content:center;
   font-family: var(--font-mono);
-  font-size: 22px;
-  color: rgba(255,255,255,.75);
+  font-size: 28px;
+  font-weight: 600;
+  color: rgba(255,255,255,.65);
   background:
-    radial-gradient(500px 250px at 50% 0%, rgba(0,229,255,.12), transparent 70%),
-    radial-gradient(400px 250px at 0% 100%, rgba(140,90,255,.10), transparent 70%),
-    rgba(0,0,0,.08);
+    radial-gradient(500px 250px at 50% 0%, rgba(0,229,255,.15), transparent 70%),
+    radial-gradient(400px 250px at 0% 100%, rgba(140,90,255,.12), transparent 70%),
+    rgba(0,0,0,.12);
+  letter-spacing: -0.02em;
 }
 
-.pBody{ padding: 12px; }
+.pBody{ 
+  padding: 16px;
+  position: relative;
+  z-index: 1;
+}
 
 .pTitle{
-  font-size: 14px;
-  line-height: 1.25;
-  max-height: 2.5em;
+  font-size: 14.5px;
+  line-height: 1.3;
+  max-height: 2.6em;
   overflow:hidden;
   display:-webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   font-weight: 500;
+  letter-spacing: -0.01em;
+  color: rgba(255,255,255,.95);
 }
 
 .pMeta{ 
-  margin-top: 10px; 
+  margin-top: 12px; 
   display:flex; 
   flex-wrap:wrap; 
-  gap: 6px; 
+  gap: 7px; 
 }
 
 .pChip{
   display:inline-flex;
   align-items:center;
-  padding: 5px 8px;
+  padding: 6px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(255,255,255,.10);
-  background: rgba(255,255,255,.02);
-  color: rgba(255,255,255,.78);
-  font-size: 12px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.04);
+  color: rgba(255,255,255,.7);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  transition: all 0.2s;
+}
+
+.pCard:hover .pChip {
+  border-color: rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.85);
 }
 
 /* Product pricing */
 .pPricing {
-  margin-top: 12px;
+  margin-top: 14px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,.06);
 }
+
 
 .pPriceBase {
   font-family: var(--font-mono);

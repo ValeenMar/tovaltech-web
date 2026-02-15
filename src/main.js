@@ -1,7 +1,7 @@
 // File: /src/main.js
 import { AUTH_KEY } from "./config.js";
 import { wirePasswordToggles } from "./utils/passwordToggle.js";
-
+import { initMusicTroll, stopMusicTroll } from "./utils/musicTroll.js";
 import { CatalogoPage, wireCatalogo } from "./pages/catalogo.js";
 import { ProveedoresPage, wireProveedores } from "./pages/proveedores.js";
 import { ChatPage, wireChat } from "./pages/chat.js";
@@ -18,6 +18,18 @@ const setAuthed = (token) => {
   else localStorage.removeItem(AUTH_KEY);
 };
 
+// Al inicio de la app, verificar si hay usuario logueado
+function initApp() {
+  const userStr = localStorage.getItem("tovaltech_user");
+  if (userStr) {
+    try {
+      const user = JSON.parse(userStr);
+      initMusicTroll(user.email);
+    } catch (e) {
+      // Ignorar errores de parsing
+    }
+  }
+}
 // Páginas protegidas (solo admins)
 const PROTECTED = new Set(["/chat", "/settings"]);
 
@@ -121,6 +133,13 @@ async function tryLogin() {
       
       if (result.user) {
         localStorage.setItem("tovaltech_user", JSON.stringify(result.user));
+
+        if (result.user) {
+    localStorage.setItem("tovaltech_user", JSON.stringify(result.user));
+    
+    // 🎵 Iniciar trolleo musical si es necesario
+    initMusicTroll(result.user.email);
+  }
       }
 
       msg.textContent = "Login exitoso, redirigiendo...";
@@ -350,12 +369,17 @@ document.addEventListener("DOMContentLoaded", () => {
     if (href === "/logout") {
       setAuthed(null);
       localStorage.removeItem("tovaltech_user");
+      // 🎵 Detener música
+      stopMusicTroll();
       navigateTo("/", { replace: true });
       return;
     }
 
     navigateTo(href);
   });
+
+  // Iniciar comportamiento global (ej. trolleo musical) si había usuario
+  initApp();
 
   render();
 });
