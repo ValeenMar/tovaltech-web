@@ -117,17 +117,14 @@ async function fetchElitCsvRaw() {
     throw new Error("Faltan variables ELIT_USER_ID / ELIT_TOKEN");
   }
 
-  const url = `https://www.elit.com.ar/api_test.php`;
-  const body = new URLSearchParams({
-    tipo: "3",
-    user_id: userId,
-    token,
-  });
+  // Nuevo endpoint de CSV (v1 API)
+  const url = `https://clientes.elit.com.ar/v1/api/productos/csv?user_id=${userId}&token=${token}`;
 
   const res = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body,
+    method: "GET",
+    headers: { 
+      "accept": "text/csv"
+    },
   });
 
   if (!res.ok) {
