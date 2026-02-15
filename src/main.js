@@ -134,8 +134,6 @@ async function tryLogin() {
       if (result.user) {
         localStorage.setItem("tovaltech_user", JSON.stringify(result.user));
 
-        if (result.user) {
-    localStorage.setItem("tovaltech_user", JSON.stringify(result.user));
     
     // 🎵 Iniciar trolleo musical si es necesario
     initMusicTroll(result.user.email);

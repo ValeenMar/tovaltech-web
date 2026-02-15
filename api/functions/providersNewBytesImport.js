@@ -28,7 +28,7 @@ function toNumber(v) {
  * Fetch productos desde New Bytes API
  */
 async function fetchNewBytesProducts(token) {
-  const url = `https://api.nb.com.ar/v1/prices`;
+  const url = `https://api.nb.com.ar/v1/priceListCsv/${token}`;
   
   const res = await fetch(url, {
     method: "GET",
