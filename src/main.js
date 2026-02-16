@@ -15,6 +15,9 @@ import { CartPage, wireCart } from "./pages/cart.js";
 import { initCartWidget } from "./components/cartWidget.js";
 import { initMusicTroll, stopMusicTroll } from "./utils/musicTroll.js";
 
+// Theme Switcher
+import { initThemeSwitcher, detectSystemTheme } from "./components/themeSwitcher.js";
+
 const app = document.querySelector("#app");
 
 const isAuthed = () => localStorage.getItem(AUTH_KEY) !== null;
@@ -33,7 +36,7 @@ const HOME_COPY = {
   sub: "Buscá productos, compará proveedores y centralizá pedidos. Jeffrey queda para administración.",
   ctas: [
     { href: "/catalogo", label: "Ver Catálogo", cls: "btn btnPrimary" },
-    { href: "/proveedores", label: "Ver Proveedores", cls: "btn" },
+    { href: "/proveedores", label: "Ver Proveedores", cls: "btn btnSecondary" },
     { href: "/chat", label: "Jeffrey (admin)", cls: "btn btnGhost" },
   ]
 };
@@ -61,7 +64,7 @@ const routes = {
 
   "/login": () => `
     <div class="authWrap">
-      <div class="authCard">
+      <div class="authCard card">
         <h2>Login</h2>
         <p class="muted" style="margin-top:8px;">Ingresá con tu email y contraseña.</p>
 
@@ -350,11 +353,17 @@ function render() {
   
   // Inicializar widget del carrito en todas las páginas
   initCartWidget();
+  
+  // Inicializar Theme Switcher
+  initThemeSwitcher();
 }
 
 window.addEventListener("popstate", render);
 
 document.addEventListener("DOMContentLoaded", () => {
+  // Detectar tema del sistema
+  detectSystemTheme();
+  
   // Verificar si hay usuario guardado para iniciar trolleo
   try {
     const userStr = localStorage.getItem("tovaltech_user");
