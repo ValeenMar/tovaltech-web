@@ -53,20 +53,24 @@ export function initThemeSwitcher() {
     button.innerHTML = newTheme === 'dark' ? sunIcon : moonIcon;
     
     // Animación suave
-    document.body.style.transition = 'background 0.3s ease, color 0.3s ease';
+    document.documentElement.style.transition = 'background-color 0.55s ease, color 0.55s ease';
+    document.body.style.transition = 'background 0.55s ease, color 0.55s ease';
     setTimeout(() => {
+      document.documentElement.style.transition = '';
       document.body.style.transition = '';
-    }, 300);
+    }, 550);
   }
   
   button.addEventListener('click', toggleTheme);
   
-  // Insertar después del carrito en el nav
+  // Insertar al lado del carrito (a la derecha)
   const nav = document.querySelector('nav.nav');
   if (nav) {
-    const cartWidget = nav.querySelector('[data-cart-widget]');
-    if (cartWidget) {
-      nav.insertBefore(button, cartWidget.nextSibling);
+    const cartIcon = nav.querySelector('#cartIcon,[data-cart-widget]');
+    if (cartIcon && cartIcon.nextSibling) {
+      nav.insertBefore(button, cartIcon.nextSibling);
+    } else if (cartIcon) {
+      nav.appendChild(button);
     } else {
       nav.appendChild(button);
     }

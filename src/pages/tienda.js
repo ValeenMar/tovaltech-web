@@ -3,6 +3,7 @@
 
 import { products as mockProducts } from "../data/products.js";
 import { providers as mockProviders } from "../data/providers.js";
+import { initFiltersSidebar } from "../components/filtersSidebar.js";
 
 let cachedProviders = null;
 let dataSource = "MOCK";
@@ -510,7 +511,7 @@ export function TiendaPage() {
   return `
   <section class="page tiendaPage">
     <div class="tiendaHeader">
-      <h1>Tienda</h1>
+      <h1 class="catalogoTitle">Tienda</h1>
       <p class="muted" id="tiendaSource">Datos: API</p>
       <div id="tiendaErr" class="errorBox" hidden></div>
     </div>
@@ -526,86 +527,123 @@ export function TiendaPage() {
       </label>
     </div>
 
-    <div class="filtersContainer">
-      <div class="filtersMain">
-        <div class="filterSection">
-          <label class="filterLabel">Buscar</label>
-          <input id="q" class="input" placeholder="Buscar por nombre o marca..." />
+    <div class="tiendaLayout" id="tiendaLayout">
+      <!-- SIDEBAR FILTROS -->
+      <aside class="filtersSidebar" id="tiendaFiltersSidebar" aria-hidden="false">
+        <div class="filtersSidebarTop">
+          <button id="tiendaFiltersCollapseBtn" class="sidebarCollapseBtn" type="button" aria-expanded="true" title="Colapsar / expandir filtros">
+            <span class="sidebarCollapseIcon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="4" y1="6" x2="20" y2="6"/>
+                <line x1="7" y1="12" x2="20" y2="12"/>
+                <line x1="10" y1="18" x2="20" y2="18"/>
+              </svg>
+            </span>
+            <span class="sidebarCollapseLbl">Filtros</span>
+            <span class="sidebarCollapseChev" aria-hidden="true">‹</span>
+          </button>
+
+          <button id="tiendaFiltersCloseBtn" class="sidebarCloseBtn" type="button" aria-label="Cerrar filtros" title="Cerrar">✕</button>
         </div>
 
-        <div class="filterSection">
-          <label class="filterLabel">Categoría</label>
-          <div class="filterRow">
-            <select id="catSel" class="select"></select>
-            <select id="subSel" class="select"></select>
+        <div class="filtersSidebarInner">
+          <div class="filterSection">
+            <label class="filterLabel" for="q">Buscar</label>
+            <input id="q" class="input" placeholder="Buscar por nombre o marca..." />
+          </div>
+
+          <div class="filterSection">
+            <label class="filterLabel">Categoría</label>
+            <div class="filterRow">
+              <select id="catSel" class="select"></select>
+              <select id="subSel" class="select"></select>
+            </div>
+          </div>
+
+          <div class="filterSection">
+            <label class="filterLabel">Marca</label>
+            <select id="brandSel" class="select">
+              <option value="">Todas las marcas</option>
+            </select>
+          </div>
+
+          <div class="filterSection">
+            <label class="filterLabel">Precio</label>
+            <div class="priceRange">
+              <input id="minPrice" class="input" placeholder="Mínimo" inputmode="decimal" />
+              <span>-</span>
+              <input id="maxPrice" class="input" placeholder="Máximo" inputmode="decimal" />
+            </div>
+
+            <select id="priceMode" class="select">
+              <option value="USD">Filtrar en USD</option>
+              <option value="ARS">Filtrar en ARS</option>
+            </select>
+          </div>
+
+          <div class="filterSection">
+            <label class="filterCheckbox" for="inStock">
+              <input id="inStock" type="checkbox" />
+              <span>Solo disponibles</span>
+            </label>
+          </div>
+        </div>
+      </aside>
+
+      <!-- CONTENIDO -->
+      <main class="tiendaContent">
+        <div class="catalogoControls">
+          <button id="tiendaFiltersMobileBtn" class="filtersMobileBtn" type="button" aria-label="Abrir filtros">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="4" y1="6" x2="20" y2="6"/>
+              <line x1="4" y1="12" x2="20" y2="12"/>
+              <line x1="4" y1="18" x2="20" y2="18"/>
+            </svg>
+            <span>Filtros</span>
+          </button>
+
+          <span class="catalogoCount" id="countPill">0 productos</span>
+
+          <div class="catalogoControlsRight">
+            <select id="sortSel" class="select">
+              <option value="relevance">Ordenar por: Relevancia</option>
+              <option value="priceAsc">Precio: Menor a Mayor</option>
+              <option value="priceDesc">Precio: Mayor a Menor</option>
+              <option value="nameAsc">Nombre: A → Z</option>
+              <option value="nameDesc">Nombre: Z → A</option>
+              <option value="brandAsc">Marca: A → Z</option>
+            </select>
+
+            <select id="pageSizeSel" class="select">
+              <option value="24">24 por página</option>
+              <option value="48" selected>48 por página</option>
+              <option value="96">96 por página</option>
+            </select>
           </div>
         </div>
 
-        <div class="filterSection">
-          <label class="filterLabel">Marca</label>
-          <select id="brandSel" class="select">
-            <option value="">Todas las marcas</option>
-          </select>
-        </div>
-
-        <div class="filterSection">
-          <label class="filterLabel">Precio</label>
-          <div class="priceRange">
-            <input id="minPrice" class="input" placeholder="Mínimo" inputmode="decimal" />
-            <span>-</span>
-            <input id="maxPrice" class="input" placeholder="Máximo" inputmode="decimal" />
+        <div class="pagerBar">
+          <div class="pagination" id="pager">
+            <button id="prevPage" class="paginationBtn" type="button" aria-label="Página anterior">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="15 18 9 12 15 6"/>
+              </svg>
+            </button>
+            <div id="pagerNums"></div>
+            <button id="nextPage" class="paginationBtn" type="button" aria-label="Página siguiente">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="9 18 15 12 9 6"/>
+              </svg>
+            </button>
           </div>
-          
-          <select id="priceMode" class="select">
-            <option value="USD">Filtrar en USD</option>
-            <option value="ARS">Filtrar en ARS</option>
-          </select>
+          <div id="pagerInfo" class="pagerInfo">Página 1 / 1</div>
         </div>
 
-        <div class="filterSection">
-          <label class="filterCheckbox">
-            <input id="inStock" type="checkbox" />
-            <span>Solo productos disponibles</span>
-          </label>
-        </div>
-      </div>
+        <div id="grid" class="productsGrid"></div>
+      </main>
     </div>
 
-    <div class="catalogoControls">
-      <span class="catalogoCount" id="countPill">0 productos</span>
-      
-      <select id="sortSel" class="select">
-        <option value="relevance">Ordenar por: Relevancia</option>
-        <option value="priceAsc">Precio: Menor a Mayor</option>
-        <option value="priceDesc">Precio: Mayor a Menor</option>
-        <option value="nameAsc">Nombre: A → Z</option>
-        <option value="nameDesc">Nombre: Z → A</option>
-        <option value="brandAsc">Marca: A → Z</option>
-      </select>
-
-      <select id="pageSizeSel" class="select">
-        <option value="24">24 por página</option>
-        <option value="48" selected>48 por página</option>
-        <option value="96">96 por página</option>
-      </select>
-    </div>
-
-    <div class="pagination" id="pager">
-      <button id="prevPage" class="paginationBtn" type="button">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="15 18 9 12 15 6"/>
-        </svg>
-      </button>
-      <div id="pagerNums"></div>
-      <button id="nextPage" class="paginationBtn" type="button">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="9 18 15 12 9 6"/>
-        </svg>
-      </button>
-    </div>
-    <div id="pagerInfo" style="text-align: center; margin: 12px 0; color: var(--muted);">Página 1 de 1</div>
-
-    <div id="grid" class="productsGrid"></div>
+    <div id="tiendaFiltersOverlay" class="filtersOverlay" hidden></div>
 
     <div id="tiendaModal" class="ttModal hidden" role="dialog" aria-modal="true" aria-label="Detalle de producto">
       <div class="ttModalBackdrop" data-tt="modal-close"></div>
@@ -655,6 +693,19 @@ export function wireTienda(rootOrQuery, maybeQuery = "") {
 
   const modal = root.querySelector("#tiendaModal");
   const modalBody = root.querySelector("#tiendaModalBody");
+
+  // Sidebar (desktop colapsable + drawer mobile)
+  initFiltersSidebar({
+    root: document,
+    layoutId: "tiendaLayout",
+    sidebarId: "tiendaFiltersSidebar",
+    mobileBtnId: "tiendaFiltersMobileBtn",
+    collapseBtnId: "tiendaFiltersCollapseBtn",
+    closeBtnId: "tiendaFiltersCloseBtn",
+    overlayId: "tiendaFiltersOverlay",
+    storageKey: "tovaltech_filters_collapsed_tienda",
+  });
+
 
   let baseRows = [];
   let viewRows = [];

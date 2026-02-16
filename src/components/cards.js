@@ -40,7 +40,7 @@ export function renderProductCards({ rows, formatMoney }) {
 
         const media = `
           ${ph}
-          ${img ? `<img class="pImg" src="${esc(img)}" alt="${esc(title)}" loading="lazy" onerror="this.remove()" />` : ""}
+          ${img ? `<img class="pImg" src="${esc(img)}" alt="${esc(title)}" loading="lazy" onload="this.classList.add(\'loaded\')" onerror="this.remove()" />` : ""}
         `;
 
         return `

@@ -47,10 +47,16 @@
 
           <!-- Admin-only -->
           <a href="/settings" data-link data-auth="admin">Settings</a>
-          <a href="/chat" data-link data-auth="admin">Jeffrey</a>
+          <a href="/chat" data-link data-auth="admin" class="navPill">Jeffrey</a>
 
           <a href="/login" data-link data-auth="login">Login</a>
-          <a href="/logout" data-link data-auth="logout">Logout</a>
+          <a href="/logout" data-link data-auth="logout" class="navIconBtn" aria-label="Logout" title="Logout">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M10 17l1 1h8a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-1 1"/>
+              <path d="M15 12H3"/>
+              <path d="M6 9l-3 3 3 3"/>
+            </svg>
+          </a>
         </nav>
       </div>
     </header>

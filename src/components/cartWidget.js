@@ -17,6 +17,7 @@ export function initCartWidget() {
     cartIcon.href = '/cart';
     cartIcon.setAttribute('data-link', '');
     cartIcon.className = 'cartIcon';
+    cartIcon.setAttribute('data-cart-widget','');
     cartIcon.innerHTML = `
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M9 2L7 6H3l3 14h12l3-14h-4l-2-4H9z"/>
@@ -26,12 +27,16 @@ export function initCartWidget() {
       <span class="cartCount">${itemCount}</span>
     `;
     
-    // Insertar antes de los links de admin
-    const settingsLink = nav.querySelector('[href="/settings"]');
-    if (settingsLink) {
-      nav.insertBefore(cartIcon, settingsLink);
-    } else {
+    // Insertar a la derecha del buscador (antes de Admin/Login)
+    const navSearch = nav.querySelector('#navSearch');
+    if (navSearch && navSearch.nextSibling) {
+      nav.insertBefore(cartIcon, navSearch.nextSibling);
+    } else if (navSearch) {
       nav.appendChild(cartIcon);
+    } else {
+      const settingsLink = nav.querySelector('[href="/settings"]');
+      if (settingsLink) nav.insertBefore(cartIcon, settingsLink);
+      else nav.appendChild(cartIcon);
     }
   } else {
     // Actualizar contador
