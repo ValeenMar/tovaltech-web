@@ -7,6 +7,7 @@ import { CatalogoPage, wireCatalogo } from './pages/catalogo.js';
 import { LoginPage, wireLogin } from './pages/login.js';
 import { ContactoPage, wireContacto } from './pages/contacto.js';
 import { CarritoPage, wireCarrito } from './pages/carrito.js';
+import { ProductDetailPage, wireProductDetail } from './pages/productDetail.js';
 
 // Estado global
 let currentUser = null;
@@ -20,16 +21,61 @@ const CLIENT_ROUTES = ['/tienda', '/carrito', '/mis-pedidos'];
 // Rutas admin (solo admin)
 const ADMIN_ROUTES = ['/catalogo', '/proveedores', '/configuracion', '/admin', '/jeffrey'];
 
-// Router
-const routes = {
-  '/': { view: HomePage, wire: wireHome, auth: false },
-  '/tienda': { view: TiendaPage, wire: wireTienda, auth: false },
-  '/catalogo': { view: CatalogoPage, wire: wireCatalogo, auth: 'admin' },
-  '/login': { view: LoginPage, wire: wireLogin, auth: false },
-  '/contacto': { view: ContactoPage, wire: wireContacto, auth: false },
-  '/carrito': { view: CarritoPage, wire: wireCarrito, auth: false },
-  // ... más rutas según necesidad
-};
+// Router con soporte para parámetros
+const routes = [
+  { path: '/', view: HomePage, wire: wireHome, auth: false },
+  { path: '/tienda', view: TiendaPage, wire: wireTienda, auth: false },
+  { path: '/catalogo', view: CatalogoPage, wire: wireCatalogo, auth: 'admin' },
+  { path: '/login', view: LoginPage, wire: wireLogin, auth: false },
+  { path: '/contacto', view: ContactoPage, wire: wireContacto, auth: false },
+  { path: '/carrito', view: CarritoPage, wire: wireCarrito, auth: false },
+  
+  // Rutas con parámetros
+  { 
+    path: '/producto/:sku', 
+    view: ProductDetailPage, 
+    wire: async (params) => wireProductDetail(params.sku, false),
+    auth: false 
+  },
+  { 
+    path: '/admin/producto/nuevo', 
+    view: () => '<div class="page"><p>Próximamente: Formulario de nuevo producto</p><a href="/catalogo" data-link class="btn btnPrimary">Volver al Catálogo</a></div>', 
+    auth: 'admin' 
+  },
+  { 
+    path: '/admin/producto/:sku', 
+    view: ProductDetailPage, 
+    wire: async (params) => wireProductDetail(params.sku, true),
+    auth: 'admin' 
+  },
+];
+
+// Función para matchear rutas con parámetros
+function matchRoute(path) {
+  // Primero intentar match exacto
+  const exactMatch = routes.find(route => route.path === path);
+  if (exactMatch) {
+    return { route: exactMatch, params: {} };
+  }
+  
+  // Luego intentar match con parámetros
+  for (const route of routes) {
+    const pattern = route.path.replace(/:[^\s/]+/g, '([^/]+)');
+    const regex = new RegExp(`^${pattern}$`);
+    const match = path.match(regex);
+    
+    if (match) {
+      const paramNames = (route.path.match(/:[^\s/]+/g) || []).map(p => p.slice(1));
+      const params = {};
+      paramNames.forEach((name, i) => {
+        params[name] = decodeURIComponent(match[i + 1]);
+      });
+      return { route, params };
+    }
+  }
+  
+  return null;
+}
 
 async function router() {
   const path = window.location.pathname;
@@ -37,12 +83,15 @@ async function router() {
   // Check auth
   await loadCurrentUser();
   
-  const route = routes[path];
+  // Match route
+  const match = matchRoute(path);
   
-  if (!route) {
+  if (!match) {
     render404();
     return;
   }
+  
+  const { route, params } = match;
   
   // Verificar permisos
   if (route.auth === 'admin' && !isAdmin()) {
@@ -58,10 +107,10 @@ async function router() {
   // Renderizar
   const appContent = document.getElementById('appContent');
   if (appContent && route.view) {
-    appContent.innerHTML = route.view();
+    appContent.innerHTML = route.view(params);
     
     if (route.wire) {
-      await route.wire();
+      await route.wire(params);
     }
   }
   

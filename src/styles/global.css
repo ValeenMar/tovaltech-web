@@ -1259,3 +1259,247 @@ code {
     justify-content: space-between;
   }
 }
+
+/* ==============================
+   PRODUCT DETAIL PAGE
+   ============================== */
+
+.productDetailContainer {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 32px 24px;
+}
+
+.productDetailLoading,
+.productDetailError {
+  text-align: center;
+  padding: 80px 24px;
+}
+
+.productDetailError h2 {
+  font-size: 28px;
+  margin-bottom: 16px;
+  color: var(--text-primary);
+}
+
+.productDetailError p {
+  font-size: 16px;
+  color: var(--text-secondary);
+  margin-bottom: 24px;
+}
+
+.productDetailHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 32px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.btnBack {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+}
+
+.btnBack:hover {
+  background: var(--card-bg);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.productDetailContent {
+  display: grid;
+  grid-template-columns: 500px 1fr;
+  gap: 48px;
+  align-items: start;
+}
+
+.productDetailImage {
+  position: sticky;
+  top: 24px;
+  background: var(--card-bg);
+  border-radius: 12px;
+  padding: 24px;
+  border: 1px solid var(--border);
+}
+
+.productDetailImage img {
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  display: block;
+}
+
+.productNoImage {
+  width: 100%;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  border-radius: 8px;
+  color: var(--text-tertiary);
+}
+
+.productDetailInfo h1 {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 24px;
+  line-height: 1.2;
+}
+
+.productDetailMeta {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.metaItem {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.metaLabel {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  min-width: 140px;
+}
+
+.metaValue {
+  font-size: 15px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.metaValue.inStock {
+  color: var(--success);
+}
+
+.metaValue.outOfStock {
+  color: var(--error);
+}
+
+.productDetailPrice {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark, #0ea5e9) 100%);
+  padding: 24px;
+  border-radius: 12px;
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.priceLabel {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.priceValue {
+  display: block;
+  font-size: 40px;
+  font-weight: 700;
+  color: white;
+  margin-bottom: 4px;
+}
+
+.priceIva {
+  display: block;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.productDetailActions {
+  margin-bottom: 32px;
+}
+
+.btnLarge {
+  width: 100%;
+  padding: 16px 24px;
+  font-size: 16px;
+  font-weight: 600;
+  justify-content: center;
+  gap: 12px;
+}
+
+.productDetailDescription {
+  padding: 24px;
+  background: var(--card-bg);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+
+.productDetailDescription h3 {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+}
+
+.productDetailDescription p {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .productDetailContent {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+  
+  .productDetailImage {
+    position: static;
+    max-width: 500px;
+    margin: 0 auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .productDetailContainer {
+    padding: 24px 16px;
+  }
+  
+  .productDetailHeader {
+    flex-direction: column;
+    gap: 16px;
+    align-items: stretch;
+  }
+  
+  .productDetailInfo h1 {
+    font-size: 24px;
+  }
+  
+  .priceValue {
+    font-size: 32px;
+  }
+  
+  .metaLabel {
+    min-width: 100px;
+    font-size: 13px;
+  }
+  
+  .metaValue {
+    font-size: 14px;
+  }
+}
