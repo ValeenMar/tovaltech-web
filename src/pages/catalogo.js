@@ -4,6 +4,11 @@ import { providers as mockProviders } from "../data/providers.js";
 import { renderTable } from "../components/table.js";
 import { renderProductCards } from "../components/cards.js";
 
+// Scroll to top suave
+function scrollToTop() {
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 let cachedProviders = null;
 let dataSource = "MOCK";
 
@@ -382,27 +387,72 @@ export function CatalogoPage() {
         <button id="viewCards" class="btn small primary">Cards</button>
       </div>
 
-      <div class="pill" id="countPill">0 items • ${dataSource}</div>
+        <div class="filterSection">
+          <label class="filterLabel">Tipo de Cambio USD→ARS</label>
+          <input id="fxUsdArs" class="input" placeholder="Ej: 1050" inputmode="decimal" />
+        </div>
+
+        <div class="activeFilters" id="activeFilters"></div>
+      </aside>
+
+      <!-- CONTENIDO PRINCIPAL -->
+      <main class="catalogoContent">
+        <div class="catalogoControls">
+          <select id="sortSel" class="select">
+            <option value="relevance">Ordenar por: Relevancia</option>
+            <option value="priceAsc">Precio: Menor a Mayor</option>
+            <option value="priceDesc">Precio: Mayor a Menor</option>
+            <option value="nameAsc">Nombre: A → Z</option>
+            <option value="nameDesc">Nombre: Z → A</option>
+            <option value="brandAsc">Marca: A → Z</option>
+          </select>
+
+          <select id="pageSizeSel" class="select">
+            <option value="25">25 por página</option>
+            <option value="50" selected>50 por página</option>
+            <option value="100">100 por página</option>
+            <option value="200">200 por página</option>
+          </select>
+
+          <div class="viewToggle">
+            <button id="viewTable" class="viewBtn" title="Vista de tabla">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="8" y1="6" x2="21" y2="6"/>
+                <line x1="8" y1="12" x2="21" y2="12"/>
+                <line x1="8" y1="18" x2="21" y2="18"/>
+                <line x1="3" y1="6" x2="3.01" y2="6"/>
+                <line x1="3" y1="12" x2="3.01" y2="12"/>
+                <line x1="3" y1="18" x2="3.01" y2="18"/>
+              </svg>
+            </button>
+            <button id="viewCards" class="viewBtn active" title="Vista de tarjetas">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="7" height="7"/>
+                <rect x="14" y="3" width="7" height="7"/>
+                <rect x="14" y="14" width="7" height="7"/>
+                <rect x="3" y="14" width="7" height="7"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div id="productsList"></div>
+
+        <div class="pagination" id="pager">
+          <button id="prevPage" class="paginationBtn" type="button">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="15 18 9 12 15 6"/>
+            </svg>
+          </button>
+          <div id="pagerNums"></div>
+          <button id="nextPage" class="paginationBtn" type="button">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+          </button>
+        </div>
+      </main>
     </div>
-
-    <div class="pager" id="pager">
-      <button id="prevPage" class="btn small" type="button">‹</button>
-      <div id="pagerInfo" class="pagerInfo">Página 1 / 1</div>
-      <button id="nextPage" class="btn small" type="button">›</button>
-
-      <div class="pagerRight">
-        <span class="muted small">Items:</span>
-        <select id="pageSizeSel" class="select">
-          <option value="25">25</option>
-          <option value="50" selected>50</option>
-          <option value="100">100</option>
-          <option value="200">200</option>
-        </select>
-      </div>
-    </div>
-    <div class="pagerNums" id="pagerNums"></div>
-
-    <div id="productsList"></div>
 
     <div id="ttModal" class="ttModal hidden" role="dialog" aria-modal="true" aria-label="Detalle de producto">
       <div class="ttModalBackdrop" data-tt="modal-close"></div>
@@ -659,7 +709,7 @@ export function wireCatalogo(rootOrQuery, maybeQuery = "") {
   }
 
   // eventos filtros
-  provSel.addEventListener("change", () => { page = 1; draw(); });
+  provSel.addEventListener("change", () => { page = 1; scrollToTop(); draw(); });
 
   let t = null;
   qInput.addEventListener("input", () => {
@@ -670,9 +720,10 @@ export function wireCatalogo(rootOrQuery, maybeQuery = "") {
   catSel.addEventListener("change", () => {
     refreshSubOptions();
     page = 1;
+    scrollToTop();
     draw();
   });
-  subSel.addEventListener("change", () => { page = 1; draw(); });
+  subSel.addEventListener("change", () => { page = 1; scrollToTop(); draw(); });
 
   const debouncedPriceDraw = () => {
     clearTimeout(t);
@@ -680,13 +731,13 @@ export function wireCatalogo(rootOrQuery, maybeQuery = "") {
   };
   minPrice.addEventListener("input", debouncedPriceDraw);
   maxPrice.addEventListener("input", debouncedPriceDraw);
-  priceMode.addEventListener("change", () => { page = 1; draw(); });
-  withIva.addEventListener("change", () => { page = 1; draw(); });
-  inStock.addEventListener("change", () => { page = 1; draw(); });
+  priceMode.addEventListener("change", () => { page = 1; scrollToTop(); draw(); });
+  withIva.addEventListener("change", () => { page = 1; scrollToTop(); draw(); });
+  inStock.addEventListener("change", () => { page = 1; scrollToTop(); draw(); });
   sortSel.addEventListener("change", draw);
 
-  prevBtn.addEventListener("click", () => { page = Math.max(1, page - 1); draw(); });
-  nextBtn.addEventListener("click", () => { page = page + 1; draw(); });
+  prevBtn.addEventListener("click", () => { page = Math.max(1, page - 1); scrollToTop(); draw(); });
+  nextBtn.addEventListener("click", () => { page = page + 1; scrollToTop(); draw(); });
 
   pagerNums.addEventListener("click", (ev) => {
     const b = ev.target.closest("[data-page]");
@@ -694,10 +745,11 @@ export function wireCatalogo(rootOrQuery, maybeQuery = "") {
     const p = Number(b.dataset.page);
     if (!Number.isFinite(p)) return;
     page = p;
+    scrollToTop();
     draw();
   });
 
-  pageSizeSel.addEventListener("change", () => { page = 1; draw(); });
+  pageSizeSel.addEventListener("change", () => { page = 1; scrollToTop(); draw(); });
 
   async function bootstrap() {
     try {

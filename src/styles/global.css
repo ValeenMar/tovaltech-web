@@ -711,26 +711,19 @@ input[type="checkbox"] {
 /* ========================================
    FILTROS MEJORADOS - ESTILO MERCADO LIBRE
    ======================================== */
-.catalogoPage {
+.catalogoPage, .tiendaPage {
   max-width: 1400px;
 }
 
-.catalogoHeader {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  margin-bottom: 32px;
-}
-
-.catalogoTop {
+.catalogoHeader, .tiendaHeader {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
   gap: 16px;
+  margin-bottom: 24px;
 }
 
-.catalogoTitle {
+.catalogoTitle, .tiendaTitle {
   font-size: 28px;
   font-weight: 700;
   margin: 0;
@@ -751,15 +744,17 @@ input[type="checkbox"] {
   font-weight: 600;
 }
 
-.filtersContainer {
-  display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
+/* Layout sidebar + contenido (estilo Mercado Libre) */
+.catalogoLayout, .tiendaLayout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 24px;
+  align-items: start;
 }
 
-.filtersMain {
-  flex: 1;
-  min-width: 280px;
+.filtersSidebar {
+  position: sticky;
+  top: 80px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -768,6 +763,14 @@ input[type="checkbox"] {
   border: 1px solid var(--border);
   border-radius: 16px;
   box-shadow: var(--shadow);
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+}
+
+.catalogoContent, .tiendaContent {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
 .filterSection {
@@ -1610,6 +1613,17 @@ input[type="checkbox"] {
    RESPONSIVE
    ======================================== */
 @media (max-width: 768px) {
+  /* Layout: sidebar se mueve arriba en mobile */
+  .catalogoLayout, .tiendaLayout {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  
+  .filtersSidebar {
+    position: static;
+    max-height: none;
+  }
+  
   .productsGrid {
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
     gap: 12px;
