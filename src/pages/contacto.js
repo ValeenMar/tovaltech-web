@@ -1,57 +1,116 @@
 // File: /src/pages/contacto.js
 export function ContactoPage() {
   return `
-    <div class="card">
-      <h2>Contacto</h2>
-      <p class="muted" style="margin-top:10px;">
-        Escribinos para consultas comerciales, alta de proveedores o soporte.
-      </p>
-
-      <div style="margin-top:16px; display:grid; gap:10px;">
-        <div class="card" style="background: rgba(255,255,255,.02); border-color: rgba(255,255,255,.08); box-shadow: none;">
-          <h3 style="margin:0 0 6px 0;">Email</h3>
-          <p class="muted">contacto@tovaltech.com (placeholder)</p>
+    <div class="contactContainer">
+      <div class="contactCard card">
+        <div class="contactHeader">
+          <h2>Contacto</h2>
+          <p class="muted">Escribinos para consultas comerciales, alta de proveedores o soporte técnico</p>
         </div>
 
-        <div class="card" style="background: rgba(255,255,255,.02); border-color: rgba(255,255,255,.08); box-shadow: none;">
-          <h3 style="margin:0 0 6px 0;">Mensaje rápido</h3>
-          <div class="filters" style="margin-top:10px;">
-            <input id="cName" placeholder="Nombre" />
-            <input id="cEmail" placeholder="Email" />
+        <div class="contactInfo">
+          <div class="infoCard">
+            <div class="infoIcon">📧</div>
+            <div class="infoContent">
+              <h3>Email</h3>
+              <a href="mailto:contacto@tovaltech.com" class="infoLink">contacto@tovaltech.com</a>
+              <p class="muted small">Respondemos en 24-48hs hábiles</p>
+            </div>
           </div>
-          <div class="filters">
-            <input id="cMsg" placeholder="Tu mensaje" style="flex:1; min-width: 280px;" />
-            <button id="cSend" class="btn btnPrimary">Armar email</button>
+
+          <div class="infoCard">
+            <div class="infoIcon">📱</div>
+            <div class="infoContent">
+              <h3>WhatsApp</h3>
+              <a href="https://wa.me/5491123413674" class="infoLink" target="_blank">+54 9 11 2341-3674</a>
+              <p class="muted small">Lunes a Viernes 9-18hs</p>
+            </div>
           </div>
-          <p id="cStatus" class="muted" style="margin-top:10px;"></p>
         </div>
+
+        <div class="contactDivider">
+          <span>o envianos un mensaje rápido</span>
+        </div>
+
+        <form id="contactForm" class="contactForm">
+          <div class="formRow">
+            <div class="formGroup">
+              <label for="cName">Nombre</label>
+              <input id="cName" type="text" placeholder="Tu nombre" required />
+            </div>
+            <div class="formGroup">
+              <label for="cEmail">Email</label>
+              <input id="cEmail" type="email" placeholder="tu@email.com" required />
+            </div>
+          </div>
+
+          <div class="formGroup">
+            <label for="cSubject">Asunto</label>
+            <select id="cSubject">
+              <option value="consulta">Consulta General</option>
+              <option value="comercial">Consulta Comercial</option>
+              <option value="proveedor">Alta de Proveedor</option>
+              <option value="soporte">Soporte Técnico</option>
+              <option value="otro">Otro</option>
+            </select>
+          </div>
+
+          <div class="formGroup">
+            <label for="cMsg">Mensaje</label>
+            <textarea id="cMsg" placeholder="Contanos cómo podemos ayudarte..." rows="5" required></textarea>
+          </div>
+
+          <button type="submit" class="btn btnPrimary btnFull">
+            Enviar Mensaje
+          </button>
+        </form>
+
+        <p id="cStatus" class="statusMsg"></p>
       </div>
     </div>
   `;
 }
 
 export function wireContacto() {
-  const name = document.querySelector("#cName");
-  const email = document.querySelector("#cEmail");
-  const msg = document.querySelector("#cMsg");
-  const btn = document.querySelector("#cSend");
+  const form = document.querySelector("#contactForm");
+  const nameInput = document.querySelector("#cName");
+  const emailInput = document.querySelector("#cEmail");
+  const subjectInput = document.querySelector("#cSubject");
+  const msgInput = document.querySelector("#cMsg");
   const status = document.querySelector("#cStatus");
 
-  if (!btn) return;
+  if (!form) return;
 
-  btn.addEventListener("click", () => {
-    const n = (name?.value || "").trim();
-    const e = (email?.value || "").trim();
-    const m = (msg?.value || "").trim();
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
 
-    const subject = encodeURIComponent("Contacto TovalTech");
-    const body = encodeURIComponent(
-      `Nombre: ${n}\nEmail: ${e}\n\nMensaje:\n${m}\n`
+    const name = nameInput.value.trim();
+    const email = emailInput.value.trim();
+    const subject = subjectInput.options[subjectInput.selectedIndex].text;
+    const message = msgInput.value.trim();
+
+    if (!name || !email || !message) {
+      status.textContent = "⚠️ Por favor completá todos los campos";
+      status.className = "statusMsg error";
+      return;
+    }
+
+    const emailSubject = encodeURIComponent(`[TovalTech] ${subject}`);
+    const emailBody = encodeURIComponent(
+      `Nombre: ${name}\nEmail: ${email}\nAsunto: ${subject}\n\nMensaje:\n${message}\n\n---\nEnviado desde tovaltech.com`
     );
 
-    // placeholder email
-    const to = "contacto@tovaltech.com";
-    window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
-    status.textContent = "Abriendo tu cliente de mail…";
+    const mailtoURL = `mailto:contacto@tovaltech.com?subject=${emailSubject}&body=${emailBody}`;
+    
+    window.location.href = mailtoURL;
+    
+    status.textContent = "✅ Abriendo tu cliente de email...";
+    status.className = "statusMsg success";
+
+    // Reset form after 3 seconds
+    setTimeout(() => {
+      form.reset();
+      status.textContent = "";
+    }, 3000);
   });
 }

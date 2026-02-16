@@ -74,18 +74,35 @@ async function loadCurrentUser() {
       return;
     }
     
-    const res = await fetch('/api/me', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    
-    if (!res.ok) {
-      currentUser = null;
-      localStorage.removeItem('toval_token');
-      return;
+    // Try to fetch user info, but don't fail if endpoint doesn't exist
+    try {
+      const res = await fetch('/api/me', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        currentUser = data.user;
+        return;
+      }
+    } catch (apiErr) {
+      // /api/me might not exist, that's OK
+      console.log('API /me not available, using token payload');
     }
     
-    const data = await res.json();
-    currentUser = data.user;
+    // Fallback: decode token to get user info
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      currentUser = {
+        email: payload.email || payload.sub,
+        role: payload.role || 'customer',
+        name: payload.name || payload.email
+      };
+    } catch (decodeErr) {
+      // Token invalid
+      currentUser = null;
+      localStorage.removeItem('toval_token');
+    }
     
   } catch (err) {
     console.error('Error loading user:', err);
