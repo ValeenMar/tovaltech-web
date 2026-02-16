@@ -88,7 +88,7 @@ export async function wireLogin() {
       if (data.token) {
         localStorage.setItem("toval_token", data.token);
         
-        // Redirect based on role
+        // Redirect based on role with full page reload to update UI
         if (data.user && data.user.role === "admin") {
           window.location.href = "/catalogo";
         } else {

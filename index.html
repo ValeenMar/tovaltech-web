@@ -174,7 +174,7 @@
     updateCartBadge();
     
     // Update user menu
-    async function updateUserMenu() {
+    window.updateUserMenu = async function() {
       const userMenu = document.getElementById('userMenu');
       if (!userMenu) return;
       
@@ -190,14 +190,38 @@
       }
       
       try {
+        // Try API first
         const res = await fetch('/api/me', {
           headers: { 'Authorization': 'Bearer ' + token }
         });
         
-        if (!res.ok) throw new Error();
-        
-        const data = await res.json();
-        const user = data.user;
+        if (res.ok) {
+          const data = await res.json();
+          const user = data.user;
+          
+          userMenu.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span style="font-size: 14px; color: var(--text-secondary);">
+                ${user.name || user.email}
+              </span>
+              <button class="btn btnSecondary" onclick="logout()">
+                Salir
+              </button>
+            </div>
+          `;
+          return;
+        }
+      } catch {
+        // API failed, try token decode
+      }
+      
+      // Fallback: decode token
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        const user = {
+          email: payload.email || payload.sub,
+          name: payload.name || payload.email
+        };
         
         userMenu.innerHTML = `
           <div style="display: flex; align-items: center; gap: 12px;">
@@ -210,6 +234,7 @@
           </div>
         `;
       } catch {
+        // Token invalid
         localStorage.removeItem('toval_token');
         updateUserMenu();
       }
@@ -220,7 +245,7 @@
       window.location.href = '/';
     }
     
-    updateUserMenu();
+    window.updateUserMenu();
   </script>
 </body>
 </html>

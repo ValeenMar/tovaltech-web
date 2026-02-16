@@ -6,6 +6,7 @@ import { TiendaPage, wireTienda } from './pages/tienda.js';
 import { CatalogoPage, wireCatalogo } from './pages/catalogo.js';
 import { LoginPage, wireLogin } from './pages/login.js';
 import { ContactoPage, wireContacto } from './pages/contacto.js';
+import { CarritoPage, wireCarrito } from './pages/carrito.js';
 
 // Estado global
 let currentUser = null;
@@ -26,6 +27,7 @@ const routes = {
   '/catalogo': { view: CatalogoPage, wire: wireCatalogo, auth: 'admin' },
   '/login': { view: LoginPage, wire: wireLogin, auth: false },
   '/contacto': { view: ContactoPage, wire: wireContacto, auth: false },
+  '/carrito': { view: CarritoPage, wire: wireCarrito, auth: false },
   // ... más rutas según necesidad
 };
 
@@ -161,6 +163,11 @@ function updateNav() {
   } else {
     adminOnly.forEach(el => el.style.display = 'none');
     clientOnly.forEach(el => el.style.display = 'none');
+  }
+  
+  // Trigger userMenu update from index.html
+  if (typeof window.updateUserMenu === 'function') {
+    window.updateUserMenu();
   }
 }
 
