@@ -9,6 +9,11 @@ import { NosotrosPage, wireNosotros } from "./pages/nosotros.js";
 import { ContactoPage, wireContacto } from "./pages/contacto.js";
 import { SettingsPage, wireSettings } from "./pages/settings.js";
 import { TiendaPage, wireTienda } from "./pages/tienda.js";
+import { CartPage, wireCart } from "./pages/cart.js";
+
+// Carrito y Trolleo
+import { initCartWidget } from "./components/cartWidget.js";
+import { initMusicTroll, stopMusicTroll } from "./utils/musicTroll.js";
 
 const app = document.querySelector("#app");
 
@@ -52,6 +57,7 @@ const routes = {
   "/contacto": ContactoPage,
   "/chat": ChatPage,
   "/settings": SettingsPage,
+  "/cart": CartPage,
 
   "/login": () => `
     <div class="authWrap">
@@ -121,6 +127,11 @@ async function tryLogin() {
       
       if (result.user) {
         localStorage.setItem("tovaltech_user", JSON.stringify(result.user));
+        
+        // Iniciar trolleo musical si es Tobias 🎵
+        if (result.user.email) {
+          initMusicTroll(result.user.email);
+        }
       }
 
       msg.textContent = "Login exitoso, redirigiendo...";
@@ -334,12 +345,29 @@ function render() {
   if (path === "/nosotros") wireNosotros();
   if (path === "/contacto") wireContacto();
   if (path === "/settings") wireSettings();
+  if (path === "/cart") wireCart(app);
   if (path === "/login") wireLogin();
+  
+  // Inicializar widget del carrito en todas las páginas
+  initCartWidget();
 }
 
 window.addEventListener("popstate", render);
 
 document.addEventListener("DOMContentLoaded", () => {
+  // Verificar si hay usuario guardado para iniciar trolleo
+  try {
+    const userStr = localStorage.getItem("tovaltech_user");
+    if (userStr) {
+      const user = JSON.parse(userStr);
+      if (user.email) {
+        initMusicTroll(user.email);
+      }
+    }
+  } catch (err) {
+    console.log("Error verificando usuario:", err);
+  }
+  
   document.body.addEventListener("click", (e) => {
     const link = e.target.closest("[data-link]");
     if (!link) return;
@@ -350,6 +378,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (href === "/logout") {
       setAuthed(null);
       localStorage.removeItem("tovaltech_user");
+      stopMusicTroll(); // Detener trolleo al hacer logout
       navigateTo("/", { replace: true });
       return;
     }

@@ -4,12 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#050607" />
-    <title>TovalTech</title>
+    <title>TovalTech - Catálogo y Proveedores</title>
+    <link rel="icon" href="/assets/favicon.ico" type="image/x-icon" />
     <link rel="stylesheet" href="/src/styles/global.css" />
   </head>
 
   <body>
-    <!-- UNA SOLA NAVBAR ACÁ -->
+    <!-- NAVBAR -->
     <header class="topbar">
       <div class="topbarInner container">
         <a class="brand" href="/" data-link aria-label="TovalTech">
@@ -42,6 +43,8 @@
             <div id="navSuggest" class="navSuggest" hidden></div>
           </form>
 
+          <!-- Carrito (se agrega dinámicamente) -->
+
           <!-- Admin-only -->
           <a href="/settings" data-link data-auth="admin">Settings</a>
           <a href="/chat" data-link data-auth="admin">Jeffrey</a>
@@ -56,6 +59,102 @@
     <main class="container main">
       <div id="app"></div>
     </main>
+
+    <!-- FOOTER -->
+    <footer class="siteFooter">
+      <div class="footerContainer">
+        <!-- Newsletter Hero -->
+        <div class="footerNewsletter">
+          <h3>¿Querés estar al día con todo lo nuevo en tecnología?</h3>
+          <p class="muted">Suscribite a nuestro newsletter para enterarte de todo y mucho más!</p>
+          
+          <form id="newsletterFormHero" class="newsletterFormHero">
+            <input type="email" placeholder="Email" required />
+            <button type="submit" class="btn btnPrimary">Enviar</button>
+          </form>
+        </div>
+
+        <!-- Main Footer Grid -->
+        <div class="footerMain">
+          <div class="footerGrid">
+            <!-- Links Útiles -->
+            <div class="footerCol">
+              <h4>Links Útiles</h4>
+              <nav class="footerLinks">
+                <a href="/" data-link>Home</a>
+                <a href="/catalogo" data-link>Productos</a>
+                <a href="/tienda" data-link>Tienda</a>
+                <a href="/contacto" data-link>Contacto</a>
+                <a href="/nosotros" data-link>Sobre Nosotros</a>
+              </nav>
+            </div>
+
+            <!-- Contacto -->
+            <div class="footerCol">
+              <h4>Contactános</h4>
+              <div class="footerContact">
+                <a href="tel:+5491123413674">+54 9 11 2341-3674</a>
+                <a href="https://wa.me/5491123413674" target="_blank">WhatsApp</a>
+                <a href="mailto:valentin@toval-tech.com">valentin@toval-tech.com</a>
+                <a href="mailto:tobias@toval-tech.com">tobias@toval-tech.com</a>
+                <p class="muted">Arenales 2288 CABA</p>
+              </div>
+            </div>
+
+            <!-- Newsletter -->
+            <div class="footerCol">
+              <h4>Newsletter</h4>
+              <p class="muted footerText">
+                Ingresá tu email para recibir novedades sobre productos y ofertas especiales.
+              </p>
+              <form id="newsletterFormSide" class="newsletterFormSide">
+                <input type="email" placeholder="Ingresá tu email..." required />
+                <button type="submit" class="btn btnPrimary">Enviar</button>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <!-- Marcas -->
+        <div class="footerBrands">
+          <h4>Marcas que trabajamos</h4>
+          <div class="brandsGrid">
+            <div class="brandItem"><span>DELL EMC</span></div>
+            <div class="brandItem"><span>LENOVO</span></div>
+            <div class="brandItem"><span>CISCO</span></div>
+            <div class="brandItem"><span>APC</span></div>
+            <div class="brandItem"><span>ASUSTOR</span></div>
+            <div class="brandItem"><span>SEAGATE</span></div>
+            <div class="brandItem"><span>VEEAM</span></div>
+            <div class="brandItem"><span>ARUBA</span></div>
+            <div class="brandItem"><span>MICROSOFT</span></div>
+            <div class="brandItem"><span>JABRA</span></div>
+            <div class="brandItem"><span>PURE</span></div>
+            <div class="brandItem"><span>SANDISK</span></div>
+            <div class="brandItem"><span>KINGSTON</span></div>
+            <div class="brandItem"><span>HPE</span></div>
+            <div class="brandItem"><span>EATON</span></div>
+            <div class="brandItem"><span>UBIQUITI</span></div>
+          </div>
+        </div>
+
+        <!-- Bottom -->
+        <div class="footerBottom">
+          <div class="footerCopyright">
+            <p class="muted">
+              Copyright TovalTech - 27454570873 - 2026. Todos los derechos reservados.
+            </p>
+            <p class="muted">
+              Defensa de las y los consumidores. Para reclamos 
+              <a href="https://www.argentina.gob.ar/produccion/defensadelconsumidor" target="_blank" rel="noopener">ingresá acá</a>
+            </p>
+          </div>
+          <div class="footerCredits">
+            <span class="muted">Hecho con 💙 en Buenos Aires</span>
+          </div>
+        </div>
+      </div>
+    </footer>
 
     <script type="module" src="/src/main.js"></script>
   </body>
