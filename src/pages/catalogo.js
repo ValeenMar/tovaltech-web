@@ -40,49 +40,57 @@ function toNumber(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+function clamp(n, a, b) {
+  return Math.min(b, Math.max(a, n));
+}
+
+function norm(s) {
+  return String(s ?? "").toLowerCase();
+}
+
 function formatMoney(amount, currency = "USD") {
   const n = typeof amount === "number" ? amount : toNumber(amount);
   if (n === null) return "-";
-  return new Intl.NumberFormat("es-AR", {
-    style: "currency",
-    currency,
-    currencyDisplay: "code",
-    maximumFractionDigits: 2,
-  }).format(n).replace(currency, currency);
+  const cur = String(currency || "USD").toUpperCase();
+  try {
+    return new Intl.NumberFormat("es-AR", {
+      style: "currency",
+      currency: cur,
+      maximumFractionDigits: cur === "ARS" ? 0 : 2,
+    }).format(n);
+  } catch (_) {
+    return `${cur} ${n.toFixed(cur === "ARS" ? 0 : 2)}`;
+  }
 }
 
-function formatPct(p) {
-  const n = toNumber(p);
-  if (n === null) return "";
-  return (String(n).includes(".") ? n.toFixed(1) : String(n)).replace(".", ",") + "%";
+function formatPct(n) {
+  const v = typeof n === "number" ? n : toNumber(n);
+  if (v === null) return "-";
+  return `${v.toFixed(1)}%`;
 }
 
 function getFxUsdArs() {
-  const v = toNumber(localStorage.getItem("tt_fx_usd_ars"));
-  return v && v > 0 ? v : null;
+  const v = localStorage.getItem("toval_fx_usd_ars");
+  const n = toNumber(v);
+  return n && n > 0 ? n : null;
 }
 
 function setFxUsdArs(v) {
   const n = toNumber(v);
-  if (!n || n <= 0) {
-    localStorage.removeItem("tt_fx_usd_ars");
-    return null;
-  }
-  localStorage.setItem("tt_fx_usd_ars", String(n));
-  return n;
+  if (!n) localStorage.removeItem("toval_fx_usd_ars");
+  else localStorage.setItem("toval_fx_usd_ars", String(n));
 }
 
 async function loadProvidersFromApi() {
   const res = await fetch("/api/getProviders", { method: "GET" });
   const data = await res.json().catch(() => null);
   if (!res.ok || !data) throw new Error("Bad API response");
-
   const items = Array.isArray(data) ? data : (data.items || []);
   if (!Array.isArray(items)) throw new Error("Invalid items");
 
   return items.map((p) => ({
-    id: String(p.id ?? ""),
-    name: String(p.name ?? p.id ?? ""),
+    id: String(p.id ?? p.RowKey ?? ""),
+    name: String(p.name ?? p.displayName ?? p.RowKey ?? ""),
     api: !!p.api,
     currency: String(p.currency ?? "USD"),
     fx: toNumber(p.fx),
@@ -112,6 +120,7 @@ async function loadProductsFromApi({ providerId = "", q = "" } = {}) {
     price: toNumber(p.price),
     currency: String(p.currency ?? "USD"),
     ivaRate: toNumber(p.ivaRate ?? p.iva),
+    stock: toNumber(p.stock),
     imageUrl: p.imageUrl || p.image || null,
     thumbUrl: p.thumbUrl || p.thumbnail || null,
   }));
@@ -120,6 +129,52 @@ async function loadProductsFromApi({ providerId = "", q = "" } = {}) {
 function getProviderName(providerId) {
   const p = cachedProviders?.find((x) => x.id === providerId);
   return p?.name || providerId;
+}
+
+/**
+ * Taxonomía (heurística): sin tocar providers todavía.
+ * Si en el futuro tus APIs traen categoría real, reemplazamos esto.
+ */
+function classifyProduct(r) {
+  const t = `${r.name || ""} ${r.brand || ""} ${r.sku || ""}`.toLowerCase();
+
+  const has = (re) => re.test(t);
+
+  // Monitores / pantallas
+  if (has(/\bmonitor\b|\bdisplay\b|\bpantalla\b|\blcd\b|\bled\b|\bips\b|\bqhd\b|\bfhd\b|\buhd\b|\b4k\b|\b144hz\b|\b165hz\b|\b240hz\b/)) {
+    return { cat: "Monitores", sub: "Monitores" };
+  }
+
+  // Periféricos
+  if (has(/\bteclad(o|os)\b|\bkeyboard\b|\bkeycap\b|\bswitch\b/)) return { cat: "Periféricos", sub: "Teclados" };
+  if (has(/\bmouse\b|\bmice\b|\brat[oó]n\b|\bdpi\b|\bsensor\b/)) return { cat: "Periféricos", sub: "Mouse" };
+  if (has(/\bheadset\b|\bauricular(es)?\b|\bparlante(s)?\b|\bspeaker\b|\bmicro\b|\bmicrofono\b|\baudio\b/)) return { cat: "Periféricos", sub: "Audio" };
+  if (has(/\bwebcam\b|\bc[áa]mara\b|\bcamera\b/)) return { cat: "Periféricos", sub: "Cámaras" };
+
+  // Componentes PC
+  if (has(/\brtx\b|\bgtx\b|\bradeon\b|\bgeforce\b|\bgpu\b|\bgraphics\b/)) return { cat: "Componentes PC", sub: "Placas de video" };
+  if (has(/\bryzen\b|\bintel\b.*\bcore\b|\bi[3579]-\d{3,5}\b|\bprocessor\b|\bcpu\b/)) return { cat: "Componentes PC", sub: "Procesadores" };
+  if (has(/\bmother\b|\bmainboard\b|\bplaca madre\b|\bchipset\b|\bb\d{3}\b|\bx\d{3}\b|\bz\d{3}\b|\bh\d{3}\b/)) return { cat: "Componentes PC", sub: "Motherboards" };
+  if (has(/\bddr[345]\b|\bram\b|\bmemoria\b/)) return { cat: "Componentes PC", sub: "Memorias RAM" };
+  if (has(/\bnvme\b|\bm\.2\b|\bssd\b/)) return { cat: "Componentes PC", sub: "SSD / NVMe" };
+  if (has(/\bhdd\b|\bhard drive\b|\bdisco\b.*\brigido\b/)) return { cat: "Componentes PC", sub: "HDD" };
+  if (has(/\bpsu\b|\bfuente\b|\bpower supply\b|\b80\+\b|\bwatt\b/)) return { cat: "Componentes PC", sub: "Fuentes" };
+  if (has(/\bgabinete\b|\bcase\b|\bchassis\b|\bmid tower\b|\bfull tower\b/)) return { cat: "Componentes PC", sub: "Gabinetes" };
+  if (has(/\bcooler\b|\bfan\b|\bwater\s?cool\b|\baio\b|\bradiator\b|\bpasta t[ée]rmica\b|\bthermal\b/)) return { cat: "Componentes PC", sub: "Refrigeración" };
+
+  // Almacenamiento / accesorios
+  if (has(/\bpendrive\b|\busb\s?drive\b|\bmemoria usb\b|\bexternal\b.*\bdrive\b|\bdisco externo\b/)) return { cat: "Almacenamiento", sub: "Externos / USB" };
+
+  // Networking
+  if (has(/\brouter\b|\bswitch\b|\baccess point\b|\bwi-?fi\b|\bwifi\b|\bethernet\b|\blan\b|\bred\b/)) return { cat: "Redes", sub: "Networking" };
+
+  // Notebooks / PCs
+  if (has(/\bnotebook\b|\blaptop\b|\bport[aá]til\b|\bultrabook\b|\ball[- ]in[- ]one\b|\baio\b/)) return { cat: "Computadoras", sub: "Notebooks / PCs" };
+
+  // Impresión
+  if (has(/\bimpresora\b|\bprinter\b|\btoner\b|\bcartucho\b|\bink\b/)) return { cat: "Impresión", sub: "Impresión" };
+
+  return { cat: "Otros", sub: "Otros" };
 }
 
 function enhanceRows(rows) {
@@ -163,30 +218,40 @@ function renderModalBody(p) {
   const ivaMoney = p.totalWithIva !== null ? formatMoney(p.totalWithIva, p.currency) : "-";
   const arsMoney = p.arsTotal !== null ? formatMoney(p.arsTotal, "ARS") : "-";
 
-  const fxLine =
-    (String(p.currency).toUpperCase() === "USD")
-      ? (p.fxUsdArs ? `FX USD→ARS: ${p.fxUsdArs}` : "FX USD→ARS: (configurá arriba)")
-      : "";
+  const fxLine = p.fxUsdArs ? `FX USD→ARS: ${p.fxUsdArs}` : "";
+
+  const catLine = p.cat ? `<div class="row small"><span>${esc(p.cat)}${p.sub && p.sub !== p.cat ? " • " + esc(p.sub) : ""}</span></div>` : "";
 
   return `
-    <div class="ttModalGrid">
-      <div class="ttModalImg">
-        ${img ? `<img src="${esc(img)}" alt="${esc(p.name)}" />` : `<div class="ttModalPh">${esc((p.brand || p.providerName || "P")[0] || "P")}</div>`}
-      </div>
-
-      <div class="ttModalInfo">
-        <div class="ttModalTitle">${esc(p.name)}</div>
-        <div class="ttModalSub">
-          <span class="chip">${esc(p.providerName)}</span>
-          ${p.brand ? `<span class="chip">${esc(p.brand)}</span>` : ""}
-          ${p.sku ? `<span class="chip">${esc(p.sku)}</span>` : ""}
+    <div class="ttModalBody">
+      <div class="ttModalTop">
+        <div class="ttModalImg">
+          ${img ? `<img src="${esc(img)}" alt="${esc(p.name || p.sku)}" loading="lazy" />` : `<div class="ttModalImgPh">Sin imagen</div>`}
         </div>
 
-        <div class="ttModalPrices">
-          <div class="row"><span>Base</span><b>${baseMoney}</b></div>
-          ${p.ivaRate !== null ? `<div class="row"><span>IVA</span><b>${formatPct(p.ivaRate)}</b></div>` : ""}
-          <div class="row"><span>Total con IVA</span><b>${ivaMoney}</b></div>
-          <div class="row"><span>Total en ARS</span><b>${arsMoney}</b></div>
+        <div class="ttModalInfo">
+          <div class="ttModalTitle">${esc(p.name || "Producto")}</div>
+          <div class="row"><span class="muted">SKU</span><b class="mono">${esc(p.sku || "-")}</b></div>
+          <div class="row"><span class="muted">Marca</span><b>${esc(p.brand || "-")}</b></div>
+          <div class="row"><span class="muted">Proveedor</span><b>${esc(p.providerName || p.providerId || "-")}</b></div>
+          ${catLine}
+        </div>
+      </div>
+
+      <div class="ttModalPrices">
+        <div class="ttModalPrice">
+          <div class="muted">Base</div>
+          <div class="big"><b>${esc(baseMoney)}</b></div>
+        </div>
+
+        <div class="ttModalPrice">
+          <div class="muted">Con IVA</div>
+          <div class="big"><b>${esc(ivaMoney)}</b></div>
+        </div>
+
+        <div class="ttModalPrice">
+          <div class="muted">ARS (estimado)</div>
+          <div class="big"><b>${esc(arsMoney)}</b></div>
           ${fxLine ? `<div class="row small"><span>${esc(fxLine)}</span></div>` : ""}
         </div>
 
@@ -194,6 +259,81 @@ function renderModalBody(p) {
       </div>
     </div>
   `;
+}
+
+function buildTaxonomy(rows) {
+  const subsByCat = new Map(); // cat -> Set(sub)
+  for (const r of rows) {
+    const cat = r.cat || "Otros";
+    const sub = r.sub || "Otros";
+    if (!subsByCat.has(cat)) subsByCat.set(cat, new Set());
+    subsByCat.get(cat).add(sub);
+  }
+
+  const cats = Array.from(subsByCat.keys()).sort((a, b) => a.localeCompare(b, "es"));
+  const subsObj = {};
+  for (const c of cats) subsObj[c] = Array.from(subsByCat.get(c)).sort((a, b) => a.localeCompare(b, "es"));
+  return { cats, subsByCat: subsObj };
+}
+
+function computeComparablePrice({ r, fxUsdArs, priceMode = "USD", withIva = false }) {
+  // comparable: USD o ARS. Si no se puede calcular, devolvemos null.
+  const cur = String(r.currency || "USD").toUpperCase();
+  const base = (withIva && r.totalWithIva !== undefined) ? r.totalWithIva : r.price;
+
+  if (base === null || base === undefined) return null;
+
+  if (priceMode === "USD") {
+    if (cur === "USD") return base;
+    if (cur === "ARS" && fxUsdArs) return base / fxUsdArs;
+    return null;
+  }
+
+  // ARS
+  if (cur === "ARS") return base;
+  if (cur === "USD" && fxUsdArs) return base * fxUsdArs;
+  return null;
+}
+
+function renderPager({ totalItems, page, pageSize, root }) {
+  const pager = root.querySelector("#pager");
+  const pagerNums = root.querySelector("#pagerNums");
+  const pagerInfo = root.querySelector("#pagerInfo");
+  const prevBtn = root.querySelector("#prevPage");
+  const nextBtn = root.querySelector("#nextPage");
+
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const p = clamp(page, 1, totalPages);
+
+  if (pagerInfo) pagerInfo.textContent = `Página ${p} / ${totalPages}`;
+
+  if (prevBtn) prevBtn.disabled = p <= 1;
+  if (nextBtn) nextBtn.disabled = p >= totalPages;
+
+  // Números (compacto)
+  const nums = [];
+  if (totalPages <= 9) {
+    for (let i = 1; i <= totalPages; i++) nums.push(i);
+  } else {
+    const around = [1, 2, p - 2, p - 1, p, p + 1, p + 2, totalPages - 1, totalPages];
+    const set = new Set(around.filter((x) => x >= 1 && x <= totalPages));
+    const ordered = Array.from(set).sort((a, b) => a - b);
+
+    let last = 0;
+    for (const n of ordered) {
+      if (last && n - last > 1) nums.push("…");
+      nums.push(n);
+      last = n;
+    }
+  }
+
+  pagerNums.innerHTML = nums.map((n) => {
+    if (n === "…") return `<span class="pagerDots">…</span>`;
+    const active = n === p ? "active" : "";
+    return `<button class="pagerNum ${active}" data-page="${n}" type="button">${n}</button>`;
+  }).join("");
+
+  return { totalPages, page: p };
 }
 
 export function CatalogoPage() {
@@ -206,6 +346,35 @@ export function CatalogoPage() {
       <input id="q" class="input" placeholder="Buscar por SKU / nombre / marca" />
       <select id="provSel" class="select"></select>
 
+      <select id="catSel" class="select"></select>
+      <select id="subSel" class="select"></select>
+
+      <input id="minPrice" class="input small" placeholder="Precio mín" inputmode="decimal" />
+      <input id="maxPrice" class="input small" placeholder="Precio máx" inputmode="decimal" />
+      <select id="priceMode" class="select">
+        <option value="USD">Filtrar en USD</option>
+        <option value="ARS">Filtrar en ARS (usa FX)</option>
+      </select>
+
+      <label class="chk">
+        <input id="withIva" type="checkbox" />
+        Con IVA
+      </label>
+
+      <label class="chk">
+        <input id="inStock" type="checkbox" />
+        En stock
+      </label>
+
+      <select id="sortSel" class="select">
+        <option value="relevance">Orden: Relevancia</option>
+        <option value="priceAsc">Orden: Precio ↑</option>
+        <option value="priceDesc">Orden: Precio ↓</option>
+        <option value="nameAsc">Orden: Nombre A→Z</option>
+        <option value="nameDesc">Orden: Nombre Z→A</option>
+        <option value="brandAsc">Orden: Marca A→Z</option>
+      </select>
+
       <input id="fxUsdArs" class="input fxInput" placeholder="FX USD→ARS (opcional)" inputmode="decimal" />
 
       <div class="viewToggle">
@@ -215,6 +384,23 @@ export function CatalogoPage() {
 
       <div class="pill" id="countPill">0 items • ${dataSource}</div>
     </div>
+
+    <div class="pager" id="pager">
+      <button id="prevPage" class="btn small" type="button">‹</button>
+      <div id="pagerInfo" class="pagerInfo">Página 1 / 1</div>
+      <button id="nextPage" class="btn small" type="button">›</button>
+
+      <div class="pagerRight">
+        <span class="muted small">Items:</span>
+        <select id="pageSizeSel" class="select">
+          <option value="25">25</option>
+          <option value="50" selected>50</option>
+          <option value="100">100</option>
+          <option value="200">200</option>
+        </select>
+      </div>
+    </div>
+    <div class="pagerNums" id="pagerNums"></div>
 
     <div id="productsList"></div>
 
@@ -252,6 +438,20 @@ export function wireCatalogo(rootOrQuery, maybeQuery = "") {
   const catSource = root.querySelector("#catSource");
   const fxInput = root.querySelector("#fxUsdArs");
 
+  const catSel = root.querySelector("#catSel");
+  const subSel = root.querySelector("#subSel");
+  const minPrice = root.querySelector("#minPrice");
+  const maxPrice = root.querySelector("#maxPrice");
+  const priceMode = root.querySelector("#priceMode");
+  const withIva = root.querySelector("#withIva");
+  const inStock = root.querySelector("#inStock");
+  const sortSel = root.querySelector("#sortSel");
+
+  const prevBtn = root.querySelector("#prevPage");
+  const nextBtn = root.querySelector("#nextPage");
+  const pageSizeSel = root.querySelector("#pageSizeSel");
+  const pagerNums = root.querySelector("#pagerNums");
+
   const viewTableBtn = root.querySelector("#viewTable");
   const viewCardsBtn = root.querySelector("#viewCards");
 
@@ -261,6 +461,12 @@ export function wireCatalogo(rootOrQuery, maybeQuery = "") {
   let view = "cards";
   let baseRows = [];
   let viewRows = [];
+
+  let taxonomy = { cats: [], subsByCat: {} };
+
+  // estado paginado
+  let page = 1;
+  let pageSize = Number(pageSizeSel?.value || 50) || 50;
 
   // FX UI
   const fxInit = getFxUsdArs();
@@ -319,13 +525,9 @@ export function wireCatalogo(rootOrQuery, maybeQuery = "") {
     const enhanced = enhanceRows(rows);
     viewRows = enhanced;
 
-    const providerId = provSel.value || "";
-    const providerName = providerId ? getProviderName(providerId) : "";
-
     if (view === "cards") {
       mount.innerHTML = renderProductCards({
         rows: enhanced,
-        providerName,
         formatMoney,
       });
       return;
@@ -336,6 +538,7 @@ export function wireCatalogo(rootOrQuery, maybeQuery = "") {
       { key: "sku", label: "SKU", value: (r) => esc(r.sku) },
       { key: "name", label: "Nombre", value: (r) => esc(r.name) },
       { key: "brand", label: "Marca", value: (r) => esc(r.brand || "") },
+      { key: "cat", label: "Tipo", value: (r) => esc(r.cat ? (r.sub && r.sub !== r.cat ? `${r.cat} / ${r.sub}` : r.cat) : "-") },
       { key: "price", label: "Precio", value: (r) => esc(formatMoney(r.price, r.currency)) },
       { key: "iva", label: "Con IVA", value: (r) => esc(r.priceWithIvaText ? r.priceWithIvaText.replace(/^Con IVA [^:]+:\s*/, "") : "-") },
     ];
@@ -343,27 +546,158 @@ export function wireCatalogo(rootOrQuery, maybeQuery = "") {
     mount.innerHTML = renderTable({ columns, rows: enhanced });
   }
 
-  function draw() {
-    const providerId = (provSel.value || "").trim();
-    const q = (qInput.value || "").trim();
+  function fillCategorySelects() {
+    const catOpts = [`<option value="">Todas las categorías</option>`]
+      .concat(taxonomy.cats.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`));
+    catSel.innerHTML = catOpts.join("");
 
-    const filtered = baseRows.filter((r) => {
-      if (providerId && r.providerId !== providerId) return false;
-      if (!q) return true;
+    subSel.innerHTML = `<option value="">Todas las subcategorías</option>`;
+  }
 
-      const s = q.toLowerCase();
-      return (
-        (r.sku && r.sku.toLowerCase().includes(s)) ||
-        (r.name && r.name.toLowerCase().includes(s)) ||
-        (r.brand && r.brand.toLowerCase().includes(s))
-      );
+  function refreshSubOptions() {
+    const cat = (catSel.value || "").trim();
+    const subs = cat ? (taxonomy.subsByCat[cat] || []) : [];
+    const opts = [`<option value="">Todas las subcategorías</option>`]
+      .concat(subs.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`));
+    subSel.innerHTML = opts.join("");
+  }
+
+  function applySort(rows) {
+    const mode = (sortSel.value || "relevance").trim();
+    if (mode === "relevance") return rows;
+
+    const fx = getFxUsdArs();
+    const pm = priceMode.value || "USD";
+    const iva = !!withIva.checked;
+
+    const copy = [...rows];
+    copy.sort((a, b) => {
+      if (mode === "nameAsc") return norm(a.name).localeCompare(norm(b.name), "es");
+      if (mode === "nameDesc") return norm(b.name).localeCompare(norm(a.name), "es");
+      if (mode === "brandAsc") return norm(a.brand).localeCompare(norm(b.brand), "es");
+
+      if (mode === "priceAsc" || mode === "priceDesc") {
+        const pa = computeComparablePrice({ r: a, fxUsdArs: fx, priceMode: pm, withIva: iva });
+        const pb = computeComparablePrice({ r: b, fxUsdArs: fx, priceMode: pm, withIva: iva });
+
+        // nulls al final
+        if (pa === null && pb === null) return 0;
+        if (pa === null) return 1;
+        if (pb === null) return -1;
+
+        return mode === "priceAsc" ? (pa - pb) : (pb - pa);
+      }
+      return 0;
     });
 
-    countPill.textContent = `${filtered.length} items • ${dataSource}`;
+    return copy;
+  }
+
+  function draw() {
+    const providerId = (provSel.value || "").trim();
+    const q = (qInput.value || "").trim().toLowerCase();
+
+    const fx = getFxUsdArs();
+    const min = toNumber(minPrice.value);
+    const max = toNumber(maxPrice.value);
+    const pm = (priceMode.value || "USD").trim();
+    const iva = !!withIva.checked;
+    const stockOnly = !!inStock.checked;
+
+    const cat = (catSel.value || "").trim();
+    const sub = (subSel.value || "").trim();
+
+    let filtered = baseRows.filter((r) => {
+      if (providerId && r.providerId !== providerId) return false;
+
+      if (cat && r.cat !== cat) return false;
+      if (sub && r.sub !== sub) return false;
+
+      if (stockOnly && !(r.stock !== null && r.stock > 0)) return false;
+
+      if (q) {
+        // usamos campo precomputado para acelerar
+        if (!r._search || !r._search.includes(q)) return false;
+      }
+
+      if (min !== null || max !== null) {
+        // price comparable depende de (USD/ARS + FX + IVA)
+        const comparable = computeComparablePrice({
+          r,
+          fxUsdArs: fx,
+          priceMode: pm,
+          withIva: iva,
+        });
+
+        // Si no podemos calcular (ej: ARS pero no hay FX), lo dejamos pasar SOLO si no hay límites.
+        if (comparable === null) return false;
+
+        if (min !== null && comparable < min) return false;
+        if (max !== null && comparable > max) return false;
+      }
+
+      return true;
+    });
+
+    filtered = applySort(filtered);
+
+    const totalItems = filtered.length;
+
+    // paginado
+    pageSize = Number(pageSizeSel.value) || 50;
+    const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+    page = clamp(page, 1, totalPages);
+
+    const start = (page - 1) * pageSize;
+    const pageRows = filtered.slice(start, start + pageSize);
+
+    countPill.textContent = `${totalItems} items • ${dataSource}`;
     catSource.textContent = `Datos: ${dataSource}`;
 
-    render(filtered);
+    renderPager({ totalItems, page, pageSize, root });
+    render(pageRows);
   }
+
+  // eventos filtros
+  provSel.addEventListener("change", () => { page = 1; draw(); });
+
+  let t = null;
+  qInput.addEventListener("input", () => {
+    clearTimeout(t);
+    t = setTimeout(() => { page = 1; draw(); }, 150);
+  });
+
+  catSel.addEventListener("change", () => {
+    refreshSubOptions();
+    page = 1;
+    draw();
+  });
+  subSel.addEventListener("change", () => { page = 1; draw(); });
+
+  const debouncedPriceDraw = () => {
+    clearTimeout(t);
+    t = setTimeout(() => { page = 1; draw(); }, 150);
+  };
+  minPrice.addEventListener("input", debouncedPriceDraw);
+  maxPrice.addEventListener("input", debouncedPriceDraw);
+  priceMode.addEventListener("change", () => { page = 1; draw(); });
+  withIva.addEventListener("change", () => { page = 1; draw(); });
+  inStock.addEventListener("change", () => { page = 1; draw(); });
+  sortSel.addEventListener("change", draw);
+
+  prevBtn.addEventListener("click", () => { page = Math.max(1, page - 1); draw(); });
+  nextBtn.addEventListener("click", () => { page = page + 1; draw(); });
+
+  pagerNums.addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-page]");
+    if (!b) return;
+    const p = Number(b.dataset.page);
+    if (!Number.isFinite(p)) return;
+    page = p;
+    draw();
+  });
+
+  pageSizeSel.addEventListener("change", () => { page = 1; draw(); });
 
   async function bootstrap() {
     try {
@@ -392,29 +726,37 @@ export function wireCatalogo(rootOrQuery, maybeQuery = "") {
     }
 
     // normalizamos shape mock -> igual que api
-    const normalized = rows.map((p) => ({
-      sku: String(p.sku ?? p.id ?? ""),
-      providerId: String(p.providerId ?? p.provider ?? "elit"),
-      name: String(p.name ?? ""),
-      brand: String(p.brand ?? ""),
-      price: toNumber(p.price),
-      currency: String(p.currency ?? "USD"),
-      ivaRate: toNumber(p.ivaRate ?? p.iva),
-      imageUrl: p.imageUrl || p.image || null,
-      thumbUrl: p.thumbUrl || p.thumbnail || null,
-    }));
+    const normalized = rows.map((p) => {
+      const r = {
+        sku: String(p.sku ?? p.id ?? ""),
+        providerId: String(p.providerId ?? p.provider ?? "elit"),
+        name: String(p.name ?? ""),
+        brand: String(p.brand ?? ""),
+        price: toNumber(p.price),
+        currency: String(p.currency ?? "USD"),
+        ivaRate: toNumber(p.ivaRate ?? p.iva),
+        stock: toNumber(p.stock),
+        imageUrl: p.imageUrl || p.image || null,
+        thumbUrl: p.thumbUrl || p.thumbnail || null,
+      };
 
-    // dataset base (sin filtros)
+      const { cat, sub } = classifyProduct(r);
+
+      return {
+        ...r,
+        cat,
+        sub,
+        _search: `${r.sku} ${r.name} ${r.brand}`.toLowerCase(),
+      };
+    });
+
     baseRows = normalized;
 
-    // eventos filtros
-    provSel.addEventListener("change", draw);
+    taxonomy = buildTaxonomy(baseRows);
+    fillCategorySelects();
 
-    let t = null;
-    qInput.addEventListener("input", () => {
-      clearTimeout(t);
-      t = setTimeout(draw, 150);
-    });
+    // default selección
+    refreshSubOptions();
 
     draw();
   }

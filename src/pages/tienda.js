@@ -41,70 +41,69 @@ function toNumber(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+function clamp(n, a, b) {
+  return Math.min(b, Math.max(a, n));
+}
+
+function norm(s) {
+  return String(s ?? "").toLowerCase();
+}
+
 function formatMoney(amount, currency = "USD") {
   const n = typeof amount === "number" ? amount : toNumber(amount);
   if (n === null) return "-";
-  return new Intl.NumberFormat("es-AR", {
-    style: "currency",
-    currency,
-    currencyDisplay: "code",
-    maximumFractionDigits: 2,
-  })
-    .format(n)
-    .replace(currency, currency);
+  const cur = String(currency || "USD").toUpperCase();
+  try {
+    return new Intl.NumberFormat("es-AR", {
+      style: "currency",
+      currency: cur,
+      maximumFractionDigits: cur === "ARS" ? 0 : 2,
+    }).format(n);
+  } catch (_) {
+    return `${cur} ${n.toFixed(cur === "ARS" ? 0 : 2)}`;
+  }
 }
 
-function formatPct(p) {
-  const n = toNumber(p);
-  if (n === null) return "";
-  return (String(n).includes(".") ? n.toFixed(1) : String(n)).replace(".", ",") + "%";
+function formatPct(n) {
+  const v = typeof n === "number" ? n : toNumber(n);
+  if (v === null) return "-";
+  return `${v.toFixed(1)}%`;
 }
 
 function getFxUsdArs() {
-  const v = toNumber(localStorage.getItem("tt_fx_usd_ars"));
-  return v && v > 0 ? v : null;
+  const v = localStorage.getItem("toval_fx_usd_ars");
+  const n = toNumber(v);
+  return n && n > 0 ? n : null;
 }
 
 function setFxUsdArs(v) {
   const n = toNumber(v);
-  if (!n || n <= 0) {
-    localStorage.removeItem("tt_fx_usd_ars");
-    return null;
-  }
-  localStorage.setItem("tt_fx_usd_ars", String(n));
-  return n;
+  if (!n) localStorage.removeItem("toval_fx_usd_ars");
+  else localStorage.setItem("toval_fx_usd_ars", String(n));
 }
 
 function getMarginPct() {
-  const v = toNumber(localStorage.getItem("tt_margin_pct"));
-  return v === null ? 15 : v; // default 15%
+  const v = localStorage.getItem("toval_margin_pct");
+  const n = toNumber(v);
+  return n !== null && n >= 0 ? n : 15;
 }
 
 function setMarginPct(v) {
   const n = toNumber(v);
-  if (n === null || n < 0) {
-    localStorage.removeItem("tt_margin_pct");
-    return null;
-  }
-  localStorage.setItem("tt_margin_pct", String(n));
-  return n;
+  if (n === null) localStorage.removeItem("toval_margin_pct");
+  else localStorage.setItem("toval_margin_pct", String(n));
 }
 
 async function loadProvidersFromApi() {
   const res = await fetch("/api/getProviders", { method: "GET" });
   const data = await res.json().catch(() => null);
   if (!res.ok || !data) throw new Error("Bad API response");
-
-  const items = Array.isArray(data) ? data : data.items || [];
+  const items = Array.isArray(data) ? data : (data.items || []);
   if (!Array.isArray(items)) throw new Error("Invalid items");
 
   return items.map((p) => ({
-    id: String(p.id ?? ""),
-    name: String(p.name ?? p.id ?? ""),
-    api: !!p.api,
-    currency: String(p.currency ?? "USD"),
-    fx: toNumber(p.fx),
-    ivaIncluded: String(p.ivaIncluded ?? "").toLowerCase() === "true",
+    id: String(p.id ?? p.RowKey ?? ""),
+    name: String(p.name ?? p.displayName ?? p.RowKey ?? ""),
   }));
 }
 
@@ -136,6 +135,7 @@ async function loadProductsFromApi({ providerId = "", q = "" } = {}) {
     price: toNumber(p.price),
     currency: String(p.currency ?? "USD"),
     ivaRate: toNumber(p.ivaRate ?? p.iva),
+    stock: toNumber(p.stock),
     imageUrl: p.imageUrl || p.image || null,
     thumbUrl: p.thumbUrl || p.thumbnail || null,
   }));
@@ -146,17 +146,73 @@ function getProviderName(providerId) {
   return p?.name || providerId;
 }
 
+/**
+ * Taxonomía (heurística): sin tocar providers todavía.
+ */
+function classifyProduct(r) {
+  const t = `${r.name || ""} ${r.brand || ""} ${r.sku || ""}`.toLowerCase();
+  const has = (re) => re.test(t);
+
+  if (has(/\bmonitor\b|\bdisplay\b|\bpantalla\b|\blcd\b|\bled\b|\bips\b|\bqhd\b|\bfhd\b|\buhd\b|\b4k\b|\b144hz\b|\b165hz\b|\b240hz\b/)) {
+    return { cat: "Monitores", sub: "Monitores" };
+  }
+
+  if (has(/\bteclad(o|os)\b|\bkeyboard\b|\bkeycap\b|\bswitch\b/)) return { cat: "Periféricos", sub: "Teclados" };
+  if (has(/\bmouse\b|\bmice\b|\brat[oó]n\b|\bdpi\b|\bsensor\b/)) return { cat: "Periféricos", sub: "Mouse" };
+  if (has(/\bheadset\b|\bauricular(es)?\b|\bparlante(s)?\b|\bspeaker\b|\bmicro\b|\bmicrofono\b|\baudio\b/)) return { cat: "Periféricos", sub: "Audio" };
+  if (has(/\bwebcam\b|\bc[áa]mara\b|\bcamera\b/)) return { cat: "Periféricos", sub: "Cámaras" };
+
+  if (has(/\brtx\b|\bgtx\b|\bradeon\b|\bgeforce\b|\bgpu\b|\bgraphics\b/)) return { cat: "Componentes PC", sub: "Placas de video" };
+  if (has(/\bryzen\b|\bintel\b.*\bcore\b|\bi[3579]-\d{3,5}\b|\bprocessor\b|\bcpu\b/)) return { cat: "Componentes PC", sub: "Procesadores" };
+  if (has(/\bmother\b|\bmainboard\b|\bplaca madre\b|\bchipset\b|\bb\d{3}\b|\bx\d{3}\b|\bz\d{3}\b|\bh\d{3}\b/)) return { cat: "Componentes PC", sub: "Motherboards" };
+  if (has(/\bddr[345]\b|\bram\b|\bmemoria\b/)) return { cat: "Componentes PC", sub: "Memorias RAM" };
+  if (has(/\bnvme\b|\bm\.2\b|\bssd\b/)) return { cat: "Componentes PC", sub: "SSD / NVMe" };
+  if (has(/\bhdd\b|\bhard drive\b|\bdisco\b.*\brigido\b/)) return { cat: "Componentes PC", sub: "HDD" };
+  if (has(/\bpsu\b|\bfuente\b|\bpower supply\b|\b80\+\b|\bwatt\b/)) return { cat: "Componentes PC", sub: "Fuentes" };
+  if (has(/\bgabinete\b|\bcase\b|\bchassis\b|\bmid tower\b|\bfull tower\b/)) return { cat: "Componentes PC", sub: "Gabinetes" };
+  if (has(/\bcooler\b|\bfan\b|\bwater\s?cool\b|\baio\b|\bradiator\b|\bpasta t[ée]rmica\b|\bthermal\b/)) return { cat: "Componentes PC", sub: "Refrigeración" };
+
+  if (has(/\brouter\b|\bswitch\b|\baccess point\b|\bwi-?fi\b|\bwifi\b|\bethernet\b|\blan\b|\bred\b/)) return { cat: "Redes", sub: "Networking" };
+
+  if (has(/\bnotebook\b|\blaptop\b|\bport[aá]til\b|\bultrabook\b|\ball[- ]in[- ]one\b|\baio\b/)) return { cat: "Computadoras", sub: "Notebooks / PCs" };
+
+  if (has(/\bimpresora\b|\bprinter\b|\btoner\b|\bcartucho\b|\bink\b/)) return { cat: "Impresión", sub: "Impresión" };
+
+  return { cat: "Otros", sub: "Otros" };
+}
+
+function buildTaxonomy(rows) {
+  const subsByCat = new Map();
+  for (const r of rows) {
+    const cat = r.cat || "Otros";
+    const sub = r.sub || "Otros";
+    if (!subsByCat.has(cat)) subsByCat.set(cat, new Set());
+    subsByCat.get(cat).add(sub);
+  }
+
+  const cats = Array.from(subsByCat.keys()).sort((a, b) => a.localeCompare(b, "es"));
+  const subsObj = {};
+  for (const c of cats) subsObj[c] = Array.from(subsByCat.get(c)).sort((a, b) => a.localeCompare(b, "es"));
+  return { cats, subsByCat: subsObj };
+}
+
 function computeFinalPrice({ price, ivaRate, marginPct }) {
-  const base = price;
-  if (base === null) return { totalUsd: null, ivaRateUsed: ivaRate };
+  const base = typeof price === "number" ? price : toNumber(price);
+  const iva = typeof ivaRate === "number" ? ivaRate : toNumber(ivaRate);
+  const margin = typeof marginPct === "number" ? marginPct : toNumber(marginPct);
 
-  const iva = ivaRate !== null && ivaRate !== undefined ? ivaRate : null;
-  const withIva = iva !== null ? base * (1 + iva / 100) : base;
+  if (base === null) return { totalUsd: null, ivaRateUsed: iva };
 
-  const m = marginPct !== null && marginPct !== undefined ? marginPct : 0;
-  const withMargin = withIva * (1 + m / 100);
+  const ivaUsed = iva !== null ? iva : null;
+  const marginUsed = margin !== null ? margin : 0;
 
-  return { totalUsd: withMargin, ivaRateUsed: iva };
+  // IVA: base*(1+iva/100)
+  const withIva = ivaUsed !== null ? base * (1 + ivaUsed / 100) : base;
+
+  // Margen: withIva*(1+margin/100)
+  const total = withIva * (1 + marginUsed / 100);
+
+  return { totalUsd: total, ivaRateUsed: ivaUsed };
 }
 
 function enhanceRows(rows) {
@@ -196,32 +252,28 @@ function renderProductCard(p, idx) {
   const img = p.imageUrl || p.thumbUrl || null;
 
   const priceUsd = p.totalWithIvaAndMargin !== null ? formatMoney(p.totalWithIvaAndMargin, p.currency) : "-";
-  const priceArs = p.arsTotal !== null ? formatMoney(p.arsTotal, "ARS") : "-";
+  const arsMoney = p.arsTotal !== null ? formatMoney(p.arsTotal, "ARS") : "-";
+
+  const catChip = p.cat ? `<span class="pChip">${esc(p.cat)}</span>` : "";
 
   return `
-    <div class="tiendaCard" data-tt="product-card" data-idx="${idx}">
-      <div class="tiendaCardMedia">
-        ${img ? `<img src="${esc(img)}" alt="${esc(p.name)}" loading="lazy" decoding="async" />` : `<div class="tiendaCardPh">${esc((p.brand || p.providerName || "P")[0] || "P")}</div>`}
+    <div class="pCard" data-tt="product-card" data-idx="${idx}" style="cursor:pointer;">
+      <div class="pMedia">
+        ${img ? `<img class="pImg" src="${esc(img)}" alt="${esc(p.name || p.sku)}" loading="lazy" onerror="this.remove()" />` : `<div class="pPh">Sin imagen</div>`}
       </div>
-
-      <div class="tiendaCardBody">
-        <h3 class="tiendaCardTitle">${esc(p.name)}</h3>
-
-        <div class="tiendaCardMeta">
-          <span class="chip">${esc(p.providerName)}</span>
-          ${p.brand ? `<span class="chip">${esc(p.brand)}</span>` : ""}
+      <div class="pBody">
+        <div class="pTitle" title="${esc(p.name || p.sku)}">${esc(p.name || p.sku || "Producto")}</div>
+        <div class="pMeta">
+          <span class="pChip">${esc(p.providerName || p.providerId || "-")}</span>
+          ${catChip}
+          <span class="pChip">${esc(p.brand || "-")}</span>
+          <span class="pChip mono">${esc(p.sku || "-")}</span>
         </div>
 
-        <div class="tiendaCardPrice">
-          <div class="tiendaPrecioFinal">${priceArs}</div>
-          <div class="tiendaPrecioDetalle">
-            Base ${formatMoney(p.price, p.currency)}
-            ${p.ivaRate !== null ? ` • IVA ${formatPct(p.ivaRate)}` : ""}
-            ${p.marginPct !== null ? ` • Margen ${formatPct(p.marginPct)}` : ""}
-          </div>
+        <div class="pPricing">
+          <div class="pPriceBase">${esc(priceUsd)}</div>
+          ${p.fxUsdArs ? `<div class="pPriceIva">${esc(arsMoney)}</div>` : ""}
         </div>
-
-        <button class="btn btnPrimary tiendaCardBtn">Ver detalle</button>
       </div>
     </div>
   `;
@@ -234,62 +286,110 @@ function renderModalBody(p) {
   const totalMoney = p.totalWithIvaAndMargin !== null ? formatMoney(p.totalWithIvaAndMargin, p.currency) : "-";
   const arsMoney = p.arsTotal !== null ? formatMoney(p.arsTotal, "ARS") : "-";
 
-  const fxLine = String(p.currency).toUpperCase() === "USD" ? (p.fxUsdArs ? `FX USD→ARS: ${p.fxUsdArs}` : "FX USD→ARS: (configurá arriba)") : "";
-
-  const ivaMoney =
-    p.totalWithIvaAndMargin !== null && p.price !== null && p.ivaRate !== null
-      ? formatMoney(p.price * (1 + p.ivaRate / 100), p.currency)
-      : "-";
-
-  const withIvaNoMargin = p.price !== null && p.ivaRate !== null ? p.price * (1 + p.ivaRate / 100) : null;
-  const marginMoney = withIvaNoMargin !== null && p.marginPct !== null ? formatMoney(withIvaNoMargin * (1 + p.marginPct / 100), p.currency) : "-";
+  const fxLine = p.fxUsdArs ? `FX USD→ARS: ${p.fxUsdArs}` : "";
+  const marginLine = `Margen: ${formatPct(p.marginPct)}`;
+  const ivaLine = p.ivaRate !== null ? `IVA: ${formatPct(p.ivaRate)}` : "IVA: -";
+  const catLine = p.cat ? `<div class="row small"><span>${esc(p.cat)}${p.sub && p.sub !== p.cat ? " • " + esc(p.sub) : ""}</span></div>` : "";
 
   return `
-    <div class="tiendaModalGrid">
-      <div class="tiendaModalImg">
-        ${img ? `<img src="${esc(img)}" alt="${esc(p.name)}" />` : `<div class="tiendaModalPh">${esc((p.brand || p.providerName || "P")[0] || "P")}</div>`}
+    <div class="ttModalBody">
+      <div class="ttModalTop">
+        <div class="ttModalImg">
+          ${img ? `<img src="${esc(img)}" alt="${esc(p.name || p.sku)}" loading="lazy" />` : `<div class="ttModalImgPh">Sin imagen</div>`}
+        </div>
+
+        <div class="ttModalInfo">
+          <div class="ttModalTitle">${esc(p.name || "Producto")}</div>
+          <div class="row"><span class="muted">SKU</span><b class="mono">${esc(p.sku || "-")}</b></div>
+          <div class="row"><span class="muted">Marca</span><b>${esc(p.brand || "-")}</b></div>
+          <div class="row"><span class="muted">Proveedor</span><b>${esc(p.providerName || p.providerId || "-")}</b></div>
+          ${catLine}
+        </div>
       </div>
 
-      <div class="tiendaModalInfo">
-        <div>
-          <div class="tiendaModalTitle">${esc(p.name)}</div>
-          <div class="tiendaModalMeta">
-            <span class="chip">${esc(p.providerName)}</span>
-            ${p.brand ? `<span class="chip">${esc(p.brand)}</span>` : ""}
-            ${p.sku ? `<span class="chip">${esc(p.sku)}</span>` : ""}
-          </div>
+      <div class="ttModalPrices">
+        <div class="ttModalPrice">
+          <div class="muted">Base</div>
+          <div class="big"><b>${esc(baseMoney)}</b></div>
         </div>
 
-        <div class="tiendaModalDesglose">
-          <h4>Desglose de precio</h4>
-
-          <div class="tiendaModalRow"><span>Precio base</span><b>${baseMoney}</b></div>
-          ${p.ivaRate !== null ? `<div class="tiendaModalRow"><span>Con IVA (${formatPct(p.ivaRate)})</span><b>${ivaMoney}</b></div>` : ""}
-          <div class="tiendaModalRow"><span>Con margen (${formatPct(p.marginPct)})</span><b>${marginMoney}</b></div>
-
-          <div class="tiendaModalTotal">
-            <span>Total (${p.currency})</span>
-            <b>${totalMoney}</b>
-          </div>
-
-          <div class="tiendaModalRow"><span>Total en ARS</span><b>${arsMoney}</b></div>
-          ${fxLine ? `<div class="tiendaModalNote">${esc(fxLine)}</div>` : ""}
+        <div class="ttModalPrice">
+          <div class="muted">Final (IVA + margen)</div>
+          <div class="big"><b>${esc(totalMoney)}</b></div>
+          <div class="row small"><span>${esc(ivaLine)} • ${esc(marginLine)}</span></div>
         </div>
 
-        <div class="tiendaModalActions">
-          <button class="btn">Solicitar</button>
-          <button class="btn btnPrimary" data-tt="modal-close">Cerrar</button>
+        <div class="ttModalPrice">
+          <div class="muted">ARS (estimado)</div>
+          <div class="big"><b>${esc(arsMoney)}</b></div>
+          ${fxLine ? `<div class="row small"><span>${esc(fxLine)}</span></div>` : ""}
         </div>
 
-        <div class="tiendaModalNote">
-          Nota: el precio en ARS es estimado según el FX configurado.
-        </div>
+        <div class="ttModalHint">El precio en ARS es estimado según el FX que configures (no es un valor oficial).</div>
       </div>
     </div>
   `;
 }
 
-export function TiendaPage() {
+function computeComparableFinal({ r, fxUsdArs, mode = "USD" }) {
+  // Para tienda filtramos por precio FINAL (IVA + margen) en la moneda elegida.
+  const cur = String(r.currency || "USD").toUpperCase();
+  const base = r.totalWithIvaAndMargin;
+
+  if (base === null || base === undefined) return null;
+
+  if (mode === "USD") {
+    if (cur === "USD") return base;
+    if (cur === "ARS" && fxUsdArs) return base / fxUsdArs;
+    return null;
+  }
+
+  // ARS
+  if (cur === "ARS") return base;
+  if (cur === "USD" && fxUsdArs) return base * fxUsdArs;
+  return null;
+}
+
+function renderPager({ totalItems, page, pageSize, root }) {
+  const pagerInfo = root.querySelector("#pagerInfo");
+  const prevBtn = root.querySelector("#prevPage");
+  const nextBtn = root.querySelector("#nextPage");
+  const pagerNums = root.querySelector("#pagerNums");
+
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const p = clamp(page, 1, totalPages);
+
+  if (pagerInfo) pagerInfo.textContent = `Página ${p} / ${totalPages}`;
+
+  if (prevBtn) prevBtn.disabled = p <= 1;
+  if (nextBtn) nextBtn.disabled = p >= totalPages;
+
+  const nums = [];
+  if (totalPages <= 9) {
+    for (let i = 1; i <= totalPages; i++) nums.push(i);
+  } else {
+    const around = [1, 2, p - 2, p - 1, p, p + 1, p + 2, totalPages - 1, totalPages];
+    const set = new Set(around.filter((x) => x >= 1 && x <= totalPages));
+    const ordered = Array.from(set).sort((a, b) => a - b);
+
+    let last = 0;
+    for (const n of ordered) {
+      if (last && n - last > 1) nums.push("…");
+      nums.push(n);
+      last = n;
+    }
+  }
+
+  pagerNums.innerHTML = nums.map((n) => {
+    if (n === "…") return `<span class="pagerDots">…</span>`;
+    const active = n === p ? "active" : "";
+    return `<button class="pagerNum ${active}" data-page="${n}" type="button">${n}</button>`;
+  }).join("");
+
+  return { totalPages, page: p };
+}
+
+function TiendaPage() {
   return `
   <section class="page tiendaPage">
     <h1>Tienda</h1>
@@ -310,7 +410,51 @@ export function TiendaPage() {
       </div>
     </div>
 
-    <div class="pill" id="countPill">0 items • ${dataSource}</div>
+    <div class="tiendaFiltersExtra">
+      <select id="catSel" class="select"></select>
+      <select id="subSel" class="select"></select>
+
+      <input id="minPrice" class="input small" placeholder="Precio mín" inputmode="decimal" />
+      <input id="maxPrice" class="input small" placeholder="Precio máx" inputmode="decimal" />
+
+      <select id="priceMode" class="select">
+        <option value="USD">Filtrar en USD (final)</option>
+        <option value="ARS">Filtrar en ARS (final, usa FX)</option>
+      </select>
+
+      <label class="chk">
+        <input id="inStock" type="checkbox" />
+        En stock
+      </label>
+
+      <select id="sortSel" class="select">
+        <option value="relevance">Orden: Relevancia</option>
+        <option value="priceAsc">Orden: Precio ↑</option>
+        <option value="priceDesc">Orden: Precio ↓</option>
+        <option value="nameAsc">Orden: Nombre A→Z</option>
+        <option value="nameDesc">Orden: Nombre Z→A</option>
+        <option value="brandAsc">Orden: Marca A→Z</option>
+      </select>
+
+      <div class="pill" id="countPill">0 items • ${dataSource}</div>
+    </div>
+
+    <div class="pager" id="pager">
+      <button id="prevPage" class="btn small" type="button">‹</button>
+      <div id="pagerInfo" class="pagerInfo">Página 1 / 1</div>
+      <button id="nextPage" class="btn small" type="button">›</button>
+
+      <div class="pagerRight">
+        <span class="muted small">Items:</span>
+        <select id="pageSizeSel" class="select">
+          <option value="24">24</option>
+          <option value="48" selected>48</option>
+          <option value="96">96</option>
+          <option value="192">192</option>
+        </select>
+      </div>
+    </div>
+    <div class="pagerNums" id="pagerNums"></div>
 
     <div id="grid" class="tiendaGrid"></div>
 
@@ -324,6 +468,8 @@ export function TiendaPage() {
   </section>
   `;
 }
+
+export { TiendaPage };
 
 export function wireTienda(rootOrQuery, maybeQuery = "") {
   let root = document;
@@ -347,11 +493,27 @@ export function wireTienda(rootOrQuery, maybeQuery = "") {
   const tiendaSource = root.querySelector("#tiendaSource");
   const errBox = root.querySelector("#tiendaErr");
 
+  const catSel = root.querySelector("#catSel");
+  const subSel = root.querySelector("#subSel");
+  const minPrice = root.querySelector("#minPrice");
+  const maxPrice = root.querySelector("#maxPrice");
+  const priceMode = root.querySelector("#priceMode");
+  const inStock = root.querySelector("#inStock");
+  const sortSel = root.querySelector("#sortSel");
+  const pageSizeSel = root.querySelector("#pageSizeSel");
+  const pagerNums = root.querySelector("#pagerNums");
+  const prevBtn = root.querySelector("#prevPage");
+  const nextBtn = root.querySelector("#nextPage");
+
   const modal = root.querySelector("#tiendaModal");
   const modalBody = root.querySelector("#tiendaModalBody");
 
   let baseRows = [];
   let viewRows = [];
+  let taxonomy = { cats: [], subsByCat: {} };
+
+  let page = 1;
+  let pageSize = Number(pageSizeSel?.value || 48) || 48;
 
   // init config
   const fxInit = getFxUsdArs();
@@ -362,11 +524,13 @@ export function wireTienda(rootOrQuery, maybeQuery = "") {
 
   fxInput.addEventListener("input", () => {
     setFxUsdArs(fxInput.value);
+    page = 1;
     draw();
   });
 
   marginInput.addEventListener("input", () => {
     setMarginPct(marginInput.value);
+    page = 1;
     draw();
   });
 
@@ -399,39 +563,160 @@ export function wireTienda(rootOrQuery, maybeQuery = "") {
     openModal(viewRows[idx]);
   });
 
-  function setSourceUi() {
+  function fillCategorySelects() {
+    const catOpts = [`<option value="">Todas las categorías</option>`]
+      .concat(taxonomy.cats.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`));
+    catSel.innerHTML = catOpts.join("");
+
+    subSel.innerHTML = `<option value="">Todas las subcategorías</option>`;
+  }
+
+  function refreshSubOptions() {
+    const cat = (catSel.value || "").trim();
+    const subs = cat ? (taxonomy.subsByCat[cat] || []) : [];
+    const opts = [`<option value="">Todas las subcategorías</option>`]
+      .concat(subs.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`));
+    subSel.innerHTML = opts.join("");
+  }
+
+  function setSourceUi(totalItems) {
     if (tiendaSource) tiendaSource.textContent = `Datos: ${dataSource}`;
-    if (countPill) countPill.textContent = `${viewRows.length} items • ${dataSource}`;
+    if (countPill) countPill.textContent = `${totalItems} items • ${dataSource}`;
+  }
+
+  function applySort(rows, enhanced) {
+    const mode = (sortSel.value || "relevance").trim();
+    if (mode === "relevance") return { rows, enhanced };
+
+    const copy = [...rows];
+    const enhMap = new Map();
+    enhanced.forEach((e) => enhMap.set(e.sku + "|" + e.providerId, e));
+
+    copy.sort((a, b) => {
+      if (mode === "nameAsc") return norm(a.name).localeCompare(norm(b.name), "es");
+      if (mode === "nameDesc") return norm(b.name).localeCompare(norm(a.name), "es");
+      if (mode === "brandAsc") return norm(a.brand).localeCompare(norm(b.brand), "es");
+
+      if (mode === "priceAsc" || mode === "priceDesc") {
+        const ea = enhMap.get(a.sku + "|" + a.providerId);
+        const eb = enhMap.get(b.sku + "|" + b.providerId);
+        const fx = getFxUsdArs();
+        const pm = priceMode.value || "USD";
+
+        const pa = ea ? computeComparableFinal({ r: ea, fxUsdArs: fx, mode: pm }) : null;
+        const pb = eb ? computeComparableFinal({ r: eb, fxUsdArs: fx, mode: pm }) : null;
+
+        if (pa === null && pb === null) return 0;
+        if (pa === null) return 1;
+        if (pb === null) return -1;
+
+        return mode === "priceAsc" ? (pa - pb) : (pb - pa);
+      }
+
+      return 0;
+    });
+
+    // rearmamos enhanced en el nuevo orden
+    const orderedEnhanced = copy.map((r) => enhMap.get(r.sku + "|" + r.providerId)).filter(Boolean);
+    return { rows: copy, enhanced: orderedEnhanced };
   }
 
   function draw() {
     const q = (qInput.value || "").trim().toLowerCase();
+    const cat = (catSel.value || "").trim();
+    const sub = (subSel.value || "").trim();
+
+    const fx = getFxUsdArs();
+    const pm = (priceMode.value || "USD").trim();
+    const min = toNumber(minPrice.value);
+    const max = toNumber(maxPrice.value);
+    const stockOnly = !!inStock.checked;
 
     let rows = baseRows;
 
-    if (q) {
-      rows = rows.filter((r) => {
-        return (
-          (r.name && String(r.name).toLowerCase().includes(q)) ||
-          (r.brand && String(r.brand).toLowerCase().includes(q)) ||
-          (r.sku && String(r.sku).toLowerCase().includes(q))
-        );
+    rows = rows.filter((r) => {
+      if (cat && r.cat !== cat) return false;
+      if (sub && r.sub !== sub) return false;
+      if (stockOnly && !(r.stock !== null && r.stock > 0)) return false;
+
+      if (q) {
+        if (!r._search || !r._search.includes(q)) return false;
+      }
+
+      return true;
+    });
+
+    // Enhanced antes para poder filtrar por precio final
+    let enhanced = enhanceRows(rows);
+
+    if (min !== null || max !== null) {
+      enhanced = enhanced.filter((e) => {
+        const comp = computeComparableFinal({ r: e, fxUsdArs: fx, mode: pm });
+        if (comp === null) return false;
+        if (min !== null && comp < min) return false;
+        if (max !== null && comp > max) return false;
+        return true;
       });
+      // rows debe acompañar
+      const keep = new Set(enhanced.map((e) => e.sku + "|" + e.providerId));
+      rows = rows.filter((r) => keep.has(r.sku + "|" + r.providerId));
     }
 
-    const enhanced = enhanceRows(rows);
-    viewRows = enhanced;
+    // sort
+    ({ rows, enhanced } = applySort(rows, enhanced));
 
-    setSourceUi();
+    const totalItems = enhanced.length;
+
+    // paginado
+    pageSize = Number(pageSizeSel.value) || 48;
+    const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+    page = clamp(page, 1, totalPages);
+
+    const start = (page - 1) * pageSize;
+    viewRows = enhanced.slice(start, start + pageSize);
+
+    setSourceUi(totalItems);
+    renderPager({ totalItems, page, pageSize, root });
 
     grid.innerHTML = viewRows.map((p, i) => renderProductCard(p, i)).join("");
-
     if (!viewRows.length) {
       grid.innerHTML = `<div class="emptyState">No hay productos para mostrar</div>`;
     }
   }
 
+  let t = null;
   qInput.addEventListener("input", () => {
+    clearTimeout(t);
+    t = setTimeout(() => { page = 1; draw(); }, 150);
+  });
+
+  catSel.addEventListener("change", () => {
+    refreshSubOptions();
+    page = 1;
+    draw();
+  });
+  subSel.addEventListener("change", () => { page = 1; draw(); });
+
+  const debouncedPriceDraw = () => {
+    clearTimeout(t);
+    t = setTimeout(() => { page = 1; draw(); }, 150);
+  };
+  minPrice.addEventListener("input", debouncedPriceDraw);
+  maxPrice.addEventListener("input", debouncedPriceDraw);
+  priceMode.addEventListener("change", () => { page = 1; draw(); });
+  inStock.addEventListener("change", () => { page = 1; draw(); });
+  sortSel.addEventListener("change", draw);
+  pageSizeSel.addEventListener("change", () => { page = 1; draw(); });
+
+  prevBtn.addEventListener("click", () => { page = Math.max(1, page - 1); draw(); });
+  nextBtn.addEventListener("click", () => { page = page + 1; draw(); });
+
+  pagerNums.addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-page]");
+    if (!b) return;
+    const p = Number(b.dataset.page);
+    if (!Number.isFinite(p)) return;
+    page = p;
     draw();
   });
 
@@ -445,11 +730,41 @@ export function wireTienda(rootOrQuery, maybeQuery = "") {
       cachedProviders = await loadProvidersFromApi();
       const products = await loadProductsFromApi();
       dataSource = "API";
-      baseRows = products;
+
+      baseRows = products.map((r) => {
+        const { cat, sub } = classifyProduct(r);
+        return {
+          ...r,
+          cat,
+          sub,
+          _search: `${r.sku} ${r.name} ${r.brand}`.toLowerCase(),
+        };
+      });
     } catch (err) {
       dataSource = "MOCK";
       cachedProviders = mockProviders;
-      baseRows = mockProducts;
+
+      baseRows = (mockProducts || []).map((r) => {
+        const rr = {
+          sku: String(r.sku ?? r.id ?? ""),
+          providerId: String(r.providerId ?? r.provider ?? "elit"),
+          name: String(r.name ?? ""),
+          brand: String(r.brand ?? ""),
+          price: toNumber(r.price),
+          currency: String(r.currency ?? "USD"),
+          ivaRate: toNumber(r.ivaRate ?? r.iva),
+          stock: toNumber(r.stock),
+          imageUrl: r.imageUrl || r.image || null,
+          thumbUrl: r.thumbUrl || r.thumbnail || null,
+        };
+        const { cat, sub } = classifyProduct(rr);
+        return {
+          ...rr,
+          cat,
+          sub,
+          _search: `${rr.sku} ${rr.name} ${rr.brand}`.toLowerCase(),
+        };
+      });
 
       const hint = lastApiError ? `API error: ${lastApiError}` : "API no disponible";
       if (errBox) {
@@ -459,6 +774,10 @@ export function wireTienda(rootOrQuery, maybeQuery = "") {
 
       console.error("Tienda bootstrap error:", err);
     }
+
+    taxonomy = buildTaxonomy(baseRows);
+    fillCategorySelects();
+    refreshSubOptions();
 
     draw();
   }

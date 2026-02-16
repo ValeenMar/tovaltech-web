@@ -2812,3 +2812,83 @@ body::before {
   background-attachment: fixed !important;
 }
 
+
+
+/* Catalogo / Tienda: filtros extra + paginado */
+.select{
+  min-width: 180px;
+}
+
+.chk{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(255,255,255,.02);
+  color: rgba(255,255,255,.80);
+  font-size: 13px;
+}
+.chk input{ transform: translateY(1px); }
+
+.pager{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: var(--r);
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(255,255,255,.02);
+}
+.pagerInfo{
+  font-size: 13px;
+  color: rgba(255,255,255,.80);
+  min-width: 140px;
+}
+.pagerRight{
+  margin-left:auto;
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+.pagerNums{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex-wrap:wrap;
+  margin-top: 10px;
+}
+.pagerNum{
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(0,0,0,.20);
+  color: rgba(255,255,255,.88);
+  cursor:pointer;
+}
+.pagerNum:hover{ border-color: rgba(255,255,255,.22); }
+.pagerNum.active{
+  border-color: rgba(0,229,255,.60);
+  box-shadow: 0 0 0 3px rgba(0,229,255,.12);
+}
+.pagerDots{
+  padding: 8px 6px;
+  color: rgba(255,255,255,.55);
+}
+
+.tiendaFiltersExtra{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  align-items:center;
+  margin-top: -6px;
+  margin-bottom: 10px;
+}
+
+@media (max-width: 768px) {
+  .select{ min-width: 100%; }
+  .pagerInfo{ min-width: auto; }
+}
