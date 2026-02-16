@@ -463,22 +463,8 @@ function computeComparableFinal({ r, fxUsdArs, mode = "USD" }) {
 }
 
 function renderPager({ totalItems, page, pageSize, root }) {
-  const pagerInfo = root.querySelector("#pagerInfo");
-  const prevBtn = root.querySelector("#prevPage");
-  const nextBtn = root.querySelector("#nextPage");
-  const pagerNums = root.querySelector("#pagerNums");
-
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const p = clamp(page, 1, totalPages);
-
-  const pageText = `Página ${p} de ${totalPages}`;
-  if (pagerInfo) pagerInfo.textContent = pageText;
-
-  const prevDisabled = p <= 1;
-  const nextDisabled = p >= totalPages;
-  
-  if (prevBtn) prevBtn.disabled = prevDisabled;
-  if (nextBtn) nextBtn.disabled = nextDisabled;
 
   const nums = [];
   if (totalPages <= 9) {
@@ -496,13 +482,31 @@ function renderPager({ totalItems, page, pageSize, root }) {
     }
   }
 
-  if (pagerNums) {
-    pagerNums.innerHTML = nums.map((n) => {
-      if (n === "…") return `<span class="pagerDots">…</span>`;
-      const active = n === p ? "active" : "";
-      return `<button class="paginationBtn ${active}" data-page="${n}" type="button">${n}</button>`;
-    }).join("");
-  }
+  const pageText = `Página ${p} de ${totalPages}`;
+  const prevDisabled = p <= 1;
+  const nextDisabled = p >= totalPages;
+
+  const apply = (suffix = "") => {
+    const pagerInfo = root.querySelector(`#pagerInfo${suffix}`);
+    const prevBtn = root.querySelector(`#prevPage${suffix}`);
+    const nextBtn = root.querySelector(`#nextPage${suffix}`);
+    const pagerNums = root.querySelector(`#pagerNums${suffix}`);
+
+    if (pagerInfo) pagerInfo.textContent = pageText;
+    if (prevBtn) prevBtn.disabled = prevDisabled;
+    if (nextBtn) nextBtn.disabled = nextDisabled;
+
+    if (pagerNums) {
+      pagerNums.innerHTML = nums.map((n) => {
+        if (n === "…") return `<span class="pagerDots">…</span>`;
+        const active = n === p ? "active" : "";
+        return `<button class="paginationBtn ${active}" data-page="${n}" type="button">${n}</button>`;
+      }).join("");
+    }
+  };
+
+  apply("");
+  apply("Bottom");
 
   return { totalPages, page: p };
 }
@@ -511,16 +515,25 @@ export function TiendaPage() {
   return `
   <section class="page tiendaPage">
     <div class="tiendaHeader">
-      <h1 class="catalogoTitle">Tienda</h1>
+      <div class="pageTitleBlock">
+        <h1 class="catalogoTitle">Tienda</h1>
+        <p class="pageSubtitle">Precios finales con IVA + margen aplicado. Filtrá y ordená como en un marketplace.</p>
+      </div>
       <p class="muted" id="tiendaSource">Datos: API</p>
       <div id="tiendaErr" class="errorBox" hidden></div>
     </div>
 
     <div class="tiendaConfig">
-      <label>
-        <span>FX USD→ARS (API)</span>
-        <input id="fxUsdArs" class="input small" value="Cargando..." disabled />
-      </label>
+      <div class="fxWrap">
+        <span class="muted tiny">Tipo de cambio (API)</span>
+        <div class="fxPill" id="fxPill" aria-label="Tipo de cambio USD a ARS">
+          <span class="fxUsd">1 USD</span>
+          <span class="fxEq">=</span>
+          <span class="fxArs" id="fxUsdArsText">ARS ...</span>
+        </div>
+        <div class="fxMeta" id="fxMeta"></div>
+      </div>
+
       <label>
         <span>Margen %</span>
         <input id="marginPct" class="input small" placeholder="15" inputmode="decimal" />
@@ -570,9 +583,9 @@ export function TiendaPage() {
           <div class="filterSection">
             <label class="filterLabel">Precio</label>
             <div class="priceRange">
-              <input id="minPrice" class="input" placeholder="Mínimo" inputmode="decimal" />
+              <input id="minPrice" class="input compact" placeholder="Mínimo" inputmode="decimal" />
               <span>-</span>
-              <input id="maxPrice" class="input" placeholder="Máximo" inputmode="decimal" />
+              <input id="maxPrice" class="input compact" placeholder="Máximo" inputmode="decimal" />
             </div>
 
             <select id="priceMode" class="select">
@@ -639,7 +652,24 @@ export function TiendaPage() {
           <div id="pagerInfo" class="pagerInfo">Página 1 / 1</div>
         </div>
 
-        <div id="grid" class="productsGrid"></div>
+                <div id="grid" class="productsGrid"></div>
+
+        <div class="pagerBar pagerBottom">
+          <div class="pagination" id="pagerBottom">
+            <button id="prevPageBottom" class="paginationBtn" type="button" aria-label="Página anterior">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+            <div id="pagerNumsBottom"></div>
+            <button id="nextPageBottom" class="paginationBtn" type="button" aria-label="Página siguiente">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+          </div>
+          <div id="pagerInfoBottom" class="pagerInfo">Página 1 / 1</div>
+        </div>
       </main>
     </div>
 
@@ -673,7 +703,9 @@ export function wireTienda(rootOrQuery, maybeQuery = "") {
   if (qInput && initialQ) qInput.value = initialQ;
 
   const countPill = root.querySelector("#countPill");
-  const fxInput = root.querySelector("#fxUsdArs");
+  const fxText = root.querySelector("#fxUsdArsText");
+  const fxMetaEl = root.querySelector("#fxMeta");
+  const fxPill = root.querySelector("#fxPill");
   const marginInput = root.querySelector("#marginPct");
   const tiendaSource = root.querySelector("#tiendaSource");
   const errBox = root.querySelector("#tiendaErr");
@@ -715,12 +747,9 @@ export function wireTienda(rootOrQuery, maybeQuery = "") {
   let pageSize = Number(pageSizeSel?.value || 48) || 48;
   // init FX (solo API)
   try { localStorage.removeItem("toval_fx_usd_ars"); } catch (_) {}
-  if (fxInput) {
-    fxInput.disabled = true;
-    fxInput.readOnly = true;
-    fxInput.value = "Cargando...";
-    fxInput.title = "Se actualiza automáticamente desde /api/dollar-rate";
-  }
+  if (fxText) fxText.textContent = "ARS ...";
+  if (fxMetaEl) fxMetaEl.textContent = "";
+  if (fxPill) fxPill.title = "Se actualiza automáticamente desde /api/dollar-rate";
 
   const marginInit = getMarginPct();
   if (marginInit !== null && marginInput) marginInput.value = String(marginInit);
@@ -910,31 +939,36 @@ export function wireTienda(rootOrQuery, maybeQuery = "") {
   if (inStock) inStock.addEventListener("change", () => { page = 1; draw(); });
   if (sortSel) sortSel.addEventListener("change", draw);
 
-  if (prevBtn) prevBtn.addEventListener("click", () => { page = Math.max(1, page - 1); draw(); });
-  if (nextBtn) nextBtn.addEventListener("click", () => { page = page + 1; draw(); });
+  const goTop = () => window.scrollTo({ top: 0, behavior: "smooth" });
 
-  if (pagerNums) {
-    pagerNums.addEventListener("click", (ev) => {
-      const b = ev.target.closest("[data-page]");
-      if (!b) return;
-      const p = Number(b.dataset.page);
-      if (!Number.isFinite(p)) return;
-      page = p;
-      draw();
-    });
-  }
+  if (prevBtn) prevBtn.addEventListener("click", () => { page = Math.max(1, page - 1); draw(); goTop(); });
+  if (prevBtnBottom) prevBtnBottom.addEventListener("click", () => { page = Math.max(1, page - 1); draw(); goTop(); });
+  if (nextBtn) nextBtn.addEventListener("click", () => { page = page + 1; draw(); goTop(); });
+  if (nextBtnBottom) nextBtnBottom.addEventListener("click", () => { page = page + 1; draw(); goTop(); });
 
-  if (pageSizeSel) pageSizeSel.addEventListener("change", () => { page = 1; draw(); });
+    const onPagerClick = (ev) => {
+    const b = ev.target.closest("[data-page]");
+    if (!b) return;
+    const p = Number(b.dataset.page);
+    if (!Number.isFinite(p)) return;
+    page = p;
+    draw();
+    goTop();
+  };
+
+  if (pagerNums) pagerNums.addEventListener("click", onPagerClick);
+  if (pagerNumsBottom) pagerNumsBottom.addEventListener("click", onPagerClick);
+
+  if (pageSizeSel) pageSizeSel.addEventListener("change", () => { page = 1; draw(); goTop(); });
 
   async function bootstrap() {
     // FX USD→ARS desde API
     await refreshFxUsdArs();
-    if (fxInput) {
-      const fx = getFxUsdArs();
-      fxInput.value = fx ? String(fx) : "No disponible";
-      const meta = getFxMetaText();
-      if (meta) fxInput.title = meta;
-    }
+    const fx = getFxUsdArs();
+    if (fxText) fxText.textContent = fx ? `ARS ${fx.toLocaleString("es-AR")}` : "ARS -";
+    const meta = getFxMetaText();
+    if (fxMetaEl) fxMetaEl.textContent = meta || "";
+    if (fxPill && meta) fxPill.title = meta;
 
     try {
       cachedProviders = await loadProvidersFromApi();
@@ -1004,11 +1038,10 @@ export function wireTienda(rootOrQuery, maybeQuery = "") {
     await refreshFxUsdArs();
     const next = getFxUsdArs();
 
-    if (fxInput) {
-      fxInput.value = next ? String(next) : "No disponible";
-      const meta = getFxMetaText();
-      if (meta) fxInput.title = meta;
-    }
+    if (fxText) fxText.textContent = next ? `ARS ${next.toLocaleString("es-AR")}` : "ARS -";
+    const meta = getFxMetaText();
+    if (fxMetaEl) fxMetaEl.textContent = meta || "";
+    if (fxPill && meta) fxPill.title = meta;
 
     if (next && next !== prev && baseRows.length) {
       baseRows = enhanceRows(baseRows);
