@@ -104,27 +104,24 @@ async function loadProvidersFromApi() {
   return items.map((p) => ({
     id: String(p.id ?? p.RowKey ?? ""),
     name: String(p.name ?? p.displayName ?? p.RowKey ?? ""),
+    api: !!p.api,
+    currency: String(p.currency ?? "USD"),
+    fx: toNumber(p.fx),
+    ivaIncluded: String(p.ivaIncluded ?? "").toLowerCase() === "true",
   }));
 }
 
 async function loadProductsFromApi({ providerId = "", q = "" } = {}) {
-  lastApiError = null;
-
   const params = new URLSearchParams();
   if (providerId) params.set("provider", providerId);
   if (q) params.set("q", q);
-  params.set("limit", "5000");
+  params.set("limit", "20000");
 
   const res = await fetch(`/api/getProducts?${params.toString()}`, { method: "GET" });
   const data = await res.json().catch(() => null);
+  if (!res.ok || !data) throw new Error("Bad API response");
 
-  if (!res.ok || !data || data.ok === false) {
-    const errMsg = data?.error || `HTTP ${res.status}`;
-    lastApiError = errMsg;
-    throw new Error(errMsg);
-  }
-
-  const items = Array.isArray(data) ? data : data.items || [];
+  const items = Array.isArray(data) ? data : (data.items || []);
   if (!Array.isArray(items)) throw new Error("Invalid items");
 
   return items.map((p) => ({
@@ -146,9 +143,6 @@ function getProviderName(providerId) {
   return p?.name || providerId;
 }
 
-/**
- * Taxonomía (heurística): sin tocar providers todavía.
- */
 function classifyProduct(r) {
   const t = `${r.name || ""} ${r.brand || ""} ${r.sku || ""}`.toLowerCase();
   const has = (re) => re.test(t);
@@ -156,12 +150,10 @@ function classifyProduct(r) {
   if (has(/\bmonitor\b|\bdisplay\b|\bpantalla\b|\blcd\b|\bled\b|\bips\b|\bqhd\b|\bfhd\b|\buhd\b|\b4k\b|\b144hz\b|\b165hz\b|\b240hz\b/)) {
     return { cat: "Monitores", sub: "Monitores" };
   }
-
   if (has(/\bteclad(o|os)\b|\bkeyboard\b|\bkeycap\b|\bswitch\b/)) return { cat: "Periféricos", sub: "Teclados" };
   if (has(/\bmouse\b|\bmice\b|\brat[oó]n\b|\bdpi\b|\bsensor\b/)) return { cat: "Periféricos", sub: "Mouse" };
   if (has(/\bheadset\b|\bauricular(es)?\b|\bparlante(s)?\b|\bspeaker\b|\bmicro\b|\bmicrofono\b|\baudio\b/)) return { cat: "Periféricos", sub: "Audio" };
   if (has(/\bwebcam\b|\bc[áa]mara\b|\bcamera\b/)) return { cat: "Periféricos", sub: "Cámaras" };
-
   if (has(/\brtx\b|\bgtx\b|\bradeon\b|\bgeforce\b|\bgpu\b|\bgraphics\b/)) return { cat: "Componentes PC", sub: "Placas de video" };
   if (has(/\bryzen\b|\bintel\b.*\bcore\b|\bi[3579]-\d{3,5}\b|\bprocessor\b|\bcpu\b/)) return { cat: "Componentes PC", sub: "Procesadores" };
   if (has(/\bmother\b|\bmainboard\b|\bplaca madre\b|\bchipset\b|\bb\d{3}\b|\bx\d{3}\b|\bz\d{3}\b|\bh\d{3}\b/)) return { cat: "Componentes PC", sub: "Motherboards" };
@@ -171,11 +163,9 @@ function classifyProduct(r) {
   if (has(/\bpsu\b|\bfuente\b|\bpower supply\b|\b80\+\b|\bwatt\b/)) return { cat: "Componentes PC", sub: "Fuentes" };
   if (has(/\bgabinete\b|\bcase\b|\bchassis\b|\bmid tower\b|\bfull tower\b/)) return { cat: "Componentes PC", sub: "Gabinetes" };
   if (has(/\bcooler\b|\bfan\b|\bwater\s?cool\b|\baio\b|\bradiator\b|\bpasta t[ée]rmica\b|\bthermal\b/)) return { cat: "Componentes PC", sub: "Refrigeración" };
-
+  if (has(/\bpendrive\b|\busb\s?drive\b|\bmemoria usb\b|\bexternal\b.*\bdrive\b|\bdisco externo\b/)) return { cat: "Almacenamiento", sub: "Externos / USB" };
   if (has(/\brouter\b|\bswitch\b|\baccess point\b|\bwi-?fi\b|\bwifi\b|\bethernet\b|\blan\b|\bred\b/)) return { cat: "Redes", sub: "Networking" };
-
   if (has(/\bnotebook\b|\blaptop\b|\bport[aá]til\b|\bultrabook\b|\ball[- ]in[- ]one\b|\baio\b/)) return { cat: "Computadoras", sub: "Notebooks / PCs" };
-
   if (has(/\bimpresora\b|\bprinter\b|\btoner\b|\bcartucho\b|\bink\b/)) return { cat: "Impresión", sub: "Impresión" };
 
   return { cat: "Otros", sub: "Otros" };
@@ -183,17 +173,26 @@ function classifyProduct(r) {
 
 function buildTaxonomy(rows) {
   const subsByCat = new Map();
+  const brands = new Set();
+  
   for (const r of rows) {
     const cat = r.cat || "Otros";
     const sub = r.sub || "Otros";
     if (!subsByCat.has(cat)) subsByCat.set(cat, new Set());
     subsByCat.get(cat).add(sub);
+    
+    if (r.brand) brands.add(r.brand);
   }
 
   const cats = Array.from(subsByCat.keys()).sort((a, b) => a.localeCompare(b, "es"));
   const subsObj = {};
   for (const c of cats) subsObj[c] = Array.from(subsByCat.get(c)).sort((a, b) => a.localeCompare(b, "es"));
-  return { cats, subsByCat: subsObj };
+  
+  return { 
+    cats, 
+    subsByCat: subsObj,
+    brands: Array.from(brands).sort((a, b) => a.localeCompare(b, "es"))
+  };
 }
 
 function computeFinalPrice({ price, ivaRate, marginPct }) {
@@ -206,10 +205,7 @@ function computeFinalPrice({ price, ivaRate, marginPct }) {
   const ivaUsed = iva !== null ? iva : null;
   const marginUsed = margin !== null ? margin : 0;
 
-  // IVA: base*(1+iva/100)
   const withIva = ivaUsed !== null ? base * (1 + ivaUsed / 100) : base;
-
-  // Margen: withIva*(1+margin/100)
   const total = withIva * (1 + marginUsed / 100);
 
   return { totalUsd: total, ivaRateUsed: ivaUsed };
@@ -220,7 +216,6 @@ function enhanceRows(rows) {
   const marginPct = getMarginPct();
 
   return rows.map((r) => {
-    // default: ELIT suele tener IVA 10.5% (si no viene)
     const ivaRate = r.ivaRate !== null && r.ivaRate !== undefined ? r.ivaRate : r.providerId === "elit" ? 10.5 : null;
 
     const { totalUsd, ivaRateUsed } = computeFinalPrice({
@@ -247,46 +242,88 @@ function enhanceRows(rows) {
   });
 }
 
+// Lazy loading de imágenes
+function setupLazyLoading() {
+  if ('IntersectionObserver' in window) {
+    const imageObserver = new IntersectionObserver((entries, observer) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const img = entry.target;
+          const src = img.dataset.src;
+          
+          if (src) {
+            img.src = src;
+            img.removeAttribute('data-src');
+            img.classList.add('loaded');
+            observer.unobserve(img);
+          }
+        }
+      });
+    }, {
+      rootMargin: '50px'
+    });
+
+    document.querySelectorAll('img[data-src]').forEach(img => {
+      imageObserver.observe(img);
+    });
+  } else {
+    document.querySelectorAll('img[data-src]').forEach(img => {
+      img.src = img.dataset.src;
+      img.removeAttribute('data-src');
+      img.classList.add('loaded');
+    });
+  }
+}
+
+function initials(name) {
+  const t = String(name ?? "").trim();
+  if (!t) return "?";
+  const parts = t.split(/\s+/g).slice(0, 2);
+  return parts.map(p => p[0]?.toUpperCase()).join("") || "?";
+}
+
 function renderProductCard(p, idx) {
-  // Importante: si ELIT te da miniaturas de mala calidad, preferimos imageUrl.
   const img = p.imageUrl || p.thumbUrl || null;
-
-  // Precio base original
-  const basePrice = p.price !== null ? formatMoney(p.price, p.currency) : null;
-  
-  // Precio final (con IVA + margen)
   const priceUsd = p.totalWithIvaAndMargin !== null ? formatMoney(p.totalWithIvaAndMargin, p.currency) : null;
-  
-  // Precio en ARS
   const arsMoney = p.arsTotal !== null ? formatMoney(p.arsTotal, "ARS") : null;
+  
+  const hasStock = p.stock !== null && p.stock > 0;
+  const stockBadge = hasStock 
+    ? `<div class="pBadge">Disponible</div>`
+    : p.stock === 0 
+      ? `<div class="pBadge outOfStock">Sin Stock</div>`
+      : '';
 
-  const catChip = p.cat ? `<span class="pChip">${esc(p.cat)}</span>` : "";
+  const ph = `<div class="pPh">${esc(initials(p.brand || p.name))}</div>`;
+  
+  // Lazy loading
+  const media = img 
+    ? `${ph}<img class="pImg" data-src="${esc(img)}" alt="${esc(p.name || p.sku)}" onerror="this.remove()" />`
+    : ph;
 
-  // Mostrar precio: priorizar precio final, si no hay mostrar base, si no hay mostrar mensaje
   let priceDisplay = '';
   if (priceUsd) {
     priceDisplay = `<div class="pPriceBase">${esc(priceUsd)}</div>`;
-  } else if (basePrice) {
-    priceDisplay = `<div class="pPriceBase">${esc(basePrice)}</div>`;
   } else {
-    priceDisplay = `<div class="pPriceBase muted">Sin precio</div>`;
+    priceDisplay = `<div class="pPriceBase muted">Consultar</div>`;
   }
   
-  // Precio ARS (solo si hay FX configurado)
-  const arsDisplay = arsMoney ? `<div class="pPriceIva">${esc(arsMoney)}</div>` : '';
+  const arsDisplay = arsMoney ? `<div class="pPriceIva">${esc(arsMoney)}</div><div class="pPriceLabel">INCLUYE IVA • MARGEN APLICADO</div>` : '';
 
   return `
-    <div class="pCard" data-tt="product-card" data-idx="${idx}" style="cursor:pointer;">
+    <div class="pCard tiendaCard" data-tt="product-card" data-idx="${idx}">
+      ${stockBadge}
+      
       <div class="pMedia">
-        ${img ? `<img class="pImg" src="${esc(img)}" alt="${esc(p.name || p.sku)}" loading="lazy" onerror="this.remove()" />` : `<div class="pPh">Sin imagen</div>`}
+        ${media}
       </div>
+      
       <div class="pBody">
         <div class="pTitle" title="${esc(p.name || p.sku)}">${esc(p.name || p.sku || "Producto")}</div>
+        
         <div class="pMeta">
-          <span class="pChip">${esc(p.providerName || p.providerId || "-")}</span>
-          ${catChip}
-          <span class="pChip">${esc(p.brand || "-")}</span>
-          <span class="pChip mono">${esc(p.sku || "-")}</span>
+          ${p.brand ? `<span class="pChip">${esc(p.brand)}</span>` : ''}
+          ${p.cat ? `<span class="pChip">${esc(p.cat)}</span>` : ''}
         </div>
 
         <div class="pPricing">
@@ -300,58 +337,84 @@ function renderProductCard(p, idx) {
 
 function renderModalBody(p) {
   const img = p.imageUrl || p.thumbUrl || null;
-
   const baseMoney = formatMoney(p.price, p.currency);
   const totalMoney = p.totalWithIvaAndMargin !== null ? formatMoney(p.totalWithIvaAndMargin, p.currency) : "-";
   const arsMoney = p.arsTotal !== null ? formatMoney(p.arsTotal, "ARS") : "-";
-
-  const fxLine = p.fxUsdArs ? `FX USD→ARS: ${p.fxUsdArs}` : "";
-  const marginLine = `Margen: ${formatPct(p.marginPct)}`;
-  const ivaLine = p.ivaRate !== null ? `IVA: ${formatPct(p.ivaRate)}` : "IVA: -";
-  const catLine = p.cat ? `<div class="row small"><span>${esc(p.cat)}${p.sub && p.sub !== p.cat ? " • " + esc(p.sub) : ""}</span></div>` : "";
+  const fxLine = p.fxUsdArs ? `Tipo de cambio: $${p.fxUsdArs}` : "";
+  
+  const hasStock = p.stock !== null && p.stock > 0;
+  
+  // Mensaje de WhatsApp
+  const productName = esc(p.name || p.sku || "Producto");
+  const productSKU = esc(p.sku || "");
+  const productBrand = esc(p.brand || "");
+  
+  const whatsappMessage = `Hola! Me interesa el siguiente producto:%0A%0A` +
+    `*${productName}*%0A` +
+    `SKU: ${productSKU}%0A` +
+    `${productBrand ? `Marca: ${productBrand}%0A` : ''}` +
+    `Precio: ${totalMoney}%0A` +
+    `${arsMoney !== "-" ? `En pesos: ${arsMoney}%0A` : ''}` +
+    `%0A¿Está disponible? ¿Cuándo podría retirarlo/recibirlo?`;
+  
+  const whatsappURL = `https://wa.me/5491123413674?text=${whatsappMessage}`;
 
   return `
     <div class="ttModalBody">
       <div class="ttModalTop">
         <div class="ttModalImg">
-          ${img ? `<img src="${esc(img)}" alt="${esc(p.name || p.sku)}" loading="lazy" />` : `<div class="ttModalImgPh">Sin imagen</div>`}
+          ${img ? `<img src="${esc(img)}" alt="${productName}" loading="lazy" />` : `<div class="ttModalImgPh">Sin imagen</div>`}
         </div>
 
         <div class="ttModalInfo">
-          <div class="ttModalTitle">${esc(p.name || "Producto")}</div>
-          <div class="row"><span class="muted">SKU</span><b class="mono">${esc(p.sku || "-")}</b></div>
-          <div class="row"><span class="muted">Marca</span><b>${esc(p.brand || "-")}</b></div>
-          <div class="row"><span class="muted">Proveedor</span><b>${esc(p.providerName || p.providerId || "-")}</b></div>
-          ${catLine}
+          <div class="ttModalTitle">${productName}</div>
+          
+          <div class="ttModalSub">
+            ${productBrand ? `<span class="chip">${productBrand}</span>` : ''}
+            ${p.cat ? `<span class="chip">${esc(p.cat)}</span>` : ''}
+            <span class="chip mono">${productSKU}</span>
+            ${hasStock ? '<span class="chip" style="background: rgba(0, 255, 127, 0.15); color: #00FF7F; border-color: rgba(0, 255, 127, 0.3);">Disponible</span>' : ''}
+          </div>
+          
+          <div class="ttModalPrices">
+            <div class="row highlight">
+              <span>Precio final</span>
+              <b>${totalMoney}</b>
+            </div>
+            
+            ${arsMoney !== "-" ? `
+            <div class="row highlight">
+              <span>En pesos argentinos</span>
+              <b>${arsMoney}</b>
+            </div>
+            ` : ''}
+            
+            ${fxLine ? `<div class="row small"><span>${fxLine}</span></div>` : ''}
+            
+            <div class="row small">
+              <span style="color: rgba(255,255,255,0.6); font-size: 11px;">
+                * Precio incluye IVA y margen aplicado
+              </span>
+            </div>
+          </div>
+          
+          <div class="ttModalActions">
+            <a href="${whatsappURL}" target="_blank" class="btn btnPrimary btnWhatsapp btnBlock">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+              </svg>
+              Consultar por WhatsApp
+            </a>
+          </div>
+          
+          <p class="ttModalHint">Consultá disponibilidad y formas de pago por WhatsApp</p>
         </div>
-      </div>
-
-      <div class="ttModalPrices">
-        <div class="ttModalPrice">
-          <div class="muted">Base</div>
-          <div class="big"><b>${esc(baseMoney)}</b></div>
-        </div>
-
-        <div class="ttModalPrice">
-          <div class="muted">Final (IVA + margen)</div>
-          <div class="big"><b>${esc(totalMoney)}</b></div>
-          <div class="row small"><span>${esc(ivaLine)} • ${esc(marginLine)}</span></div>
-        </div>
-
-        <div class="ttModalPrice">
-          <div class="muted">ARS (estimado)</div>
-          <div class="big"><b>${esc(arsMoney)}</b></div>
-          ${fxLine ? `<div class="row small"><span>${esc(fxLine)}</span></div>` : ""}
-        </div>
-
-        <div class="ttModalHint">El precio en ARS es estimado según el FX que configures (no es un valor oficial).</div>
       </div>
     </div>
   `;
 }
 
 function computeComparableFinal({ r, fxUsdArs, mode = "USD" }) {
-  // Para tienda filtramos por precio FINAL (IVA + margen) en la moneda elegida.
   const cur = String(r.currency || "USD").toUpperCase();
   const base = r.totalWithIvaAndMargin;
 
@@ -363,7 +426,6 @@ function computeComparableFinal({ r, fxUsdArs, mode = "USD" }) {
     return null;
   }
 
-  // ARS
   if (cur === "ARS") return base;
   if (cur === "USD" && fxUsdArs) return base * fxUsdArs;
   return null;
@@ -374,27 +436,18 @@ function renderPager({ totalItems, page, pageSize, root }) {
   const prevBtn = root.querySelector("#prevPage");
   const nextBtn = root.querySelector("#nextPage");
   const pagerNums = root.querySelector("#pagerNums");
-  
-  // Paginador inferior
-  const pagerInfoBottom = root.querySelector("#pagerInfoBottom");
-  const prevBtnBottom = root.querySelector("#prevPageBottom");
-  const nextBtnBottom = root.querySelector("#nextPageBottom");
-  const pagerNumsBottom = root.querySelector("#pagerNumsBottom");
 
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const p = clamp(page, 1, totalPages);
 
-  const pageText = `Página ${p} / ${totalPages}`;
+  const pageText = `Página ${p} de ${totalPages}`;
   if (pagerInfo) pagerInfo.textContent = pageText;
-  if (pagerInfoBottom) pagerInfoBottom.textContent = pageText;
 
   const prevDisabled = p <= 1;
   const nextDisabled = p >= totalPages;
   
   if (prevBtn) prevBtn.disabled = prevDisabled;
   if (nextBtn) nextBtn.disabled = nextDisabled;
-  if (prevBtnBottom) prevBtnBottom.disabled = prevDisabled;
-  if (nextBtnBottom) nextBtnBottom.disabled = nextDisabled;
 
   const nums = [];
   if (totalPages <= 9) {
@@ -412,104 +465,117 @@ function renderPager({ totalItems, page, pageSize, root }) {
     }
   }
 
-  const numsHtml = nums.map((n) => {
-    if (n === "…") return `<span class="pagerDots">…</span>`;
-    const active = n === p ? "active" : "";
-    return `<button class="pagerNum ${active}" data-page="${n}" type="button">${n}</button>`;
-  }).join("");
-  
-  if (pagerNums) pagerNums.innerHTML = numsHtml;
-  if (pagerNumsBottom) pagerNumsBottom.innerHTML = numsHtml;
+  if (pagerNums) {
+    pagerNums.innerHTML = nums.map((n) => {
+      if (n === "…") return `<span class="pagerDots">…</span>`;
+      const active = n === p ? "active" : "";
+      return `<button class="paginationBtn ${active}" data-page="${n}" type="button">${n}</button>`;
+    }).join("");
+  }
 
   return { totalPages, page: p };
 }
 
-function TiendaPage() {
+export function TiendaPage() {
   return `
   <section class="page tiendaPage">
-    <h1>Tienda</h1>
-    <div class="muted" id="tiendaSource">Datos: ${dataSource}</div>
-    <div id="tiendaErr" class="errorText" style="display:none; margin-top:10px;"></div>
-
-    <div class="tiendaFilters">
-      <input id="q" class="input" placeholder="Buscar por nombre / marca" />
-      <div class="tiendaConfig">
-        <label>
-          <span>FX USD→ARS</span>
-          <input id="fxUsdArs" class="input small" placeholder="ej: 1200" inputmode="decimal" />
-        </label>
-        <label>
-          <span>Margen %</span>
-          <input id="marginPct" class="input small" placeholder="ej: 15" inputmode="decimal" />
-        </label>
-      </div>
+    <div class="tiendaHeader">
+      <h1>Tienda</h1>
+      <p class="muted" id="tiendaSource">Datos: API</p>
+      <div id="tiendaErr" class="errorBox" hidden></div>
     </div>
 
-    <div class="tiendaFiltersExtra">
-      <select id="catSel" class="select"></select>
-      <select id="subSel" class="select"></select>
-
-      <input id="minPrice" class="input small" placeholder="Precio mín" inputmode="decimal" />
-      <input id="maxPrice" class="input small" placeholder="Precio máx" inputmode="decimal" />
-
-      <select id="priceMode" class="select">
-        <option value="USD">Filtrar en USD (final)</option>
-        <option value="ARS">Filtrar en ARS (final, usa FX)</option>
-      </select>
-
-      <label class="chk">
-        <input id="inStock" type="checkbox" />
-        En stock
+    <div class="tiendaConfig">
+      <label>
+        <span>FX USD →ARS</span>
+        <input id="fxUsdArs" class="input small" placeholder="1421" inputmode="decimal" />
       </label>
+      <label>
+        <span>Margen %</span>
+        <input id="marginPct" class="input small" placeholder="15" inputmode="decimal" />
+      </label>
+    </div>
 
+    <div class="filtersContainer">
+      <div class="filtersMain">
+        <div class="filterSection">
+          <label class="filterLabel">Buscar</label>
+          <input id="q" class="input" placeholder="Buscar por nombre o marca..." />
+        </div>
+
+        <div class="filterSection">
+          <label class="filterLabel">Categoría</label>
+          <div class="filterRow">
+            <select id="catSel" class="select"></select>
+            <select id="subSel" class="select"></select>
+          </div>
+        </div>
+
+        <div class="filterSection">
+          <label class="filterLabel">Marca</label>
+          <select id="brandSel" class="select">
+            <option value="">Todas las marcas</option>
+          </select>
+        </div>
+
+        <div class="filterSection">
+          <label class="filterLabel">Precio</label>
+          <div class="priceRange">
+            <input id="minPrice" class="input" placeholder="Mínimo" inputmode="decimal" />
+            <span>-</span>
+            <input id="maxPrice" class="input" placeholder="Máximo" inputmode="decimal" />
+          </div>
+          
+          <select id="priceMode" class="select">
+            <option value="USD">Filtrar en USD</option>
+            <option value="ARS">Filtrar en ARS</option>
+          </select>
+        </div>
+
+        <div class="filterSection">
+          <label class="filterCheckbox">
+            <input id="inStock" type="checkbox" />
+            <span>Solo productos disponibles</span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div class="catalogoControls">
+      <span class="catalogoCount" id="countPill">0 productos</span>
+      
       <select id="sortSel" class="select">
-        <option value="relevance">Orden: Relevancia</option>
-        <option value="priceAsc">Orden: Precio ↑</option>
-        <option value="priceDesc">Orden: Precio ↓</option>
-        <option value="nameAsc">Orden: Nombre A→Z</option>
-        <option value="nameDesc">Orden: Nombre Z→A</option>
-        <option value="brandAsc">Orden: Marca A→Z</option>
+        <option value="relevance">Ordenar por: Relevancia</option>
+        <option value="priceAsc">Precio: Menor a Mayor</option>
+        <option value="priceDesc">Precio: Mayor a Menor</option>
+        <option value="nameAsc">Nombre: A → Z</option>
+        <option value="nameDesc">Nombre: Z → A</option>
+        <option value="brandAsc">Marca: A → Z</option>
       </select>
 
-      <div class="pill" id="countPill">0 items • ${dataSource}</div>
+      <select id="pageSizeSel" class="select">
+        <option value="24">24 por página</option>
+        <option value="48" selected>48 por página</option>
+        <option value="96">96 por página</option>
+      </select>
     </div>
 
-    <div class="pager" id="pager">
-      <button id="prevPage" class="btn small" type="button">‹</button>
-      <div id="pagerInfo" class="pagerInfo">Página 1 / 1</div>
-      <button id="nextPage" class="btn small" type="button">›</button>
-
-      <div class="pagerRight">
-        <span class="muted small">Items:</span>
-        <select id="pageSizeSel" class="select">
-          <option value="24">24</option>
-          <option value="48" selected>48</option>
-          <option value="96">96</option>
-          <option value="192">192</option>
-        </select>
-      </div>
+    <div class="pagination" id="pager">
+      <button id="prevPage" class="paginationBtn" type="button">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="15 18 9 12 15 6"/>
+        </svg>
+      </button>
+      <div id="pagerNums"></div>
+      <button id="nextPage" class="paginationBtn" type="button">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
+      </button>
     </div>
-    <div class="pagerNums" id="pagerNums"></div>
+    <div id="pagerInfo" style="text-align: center; margin: 12px 0; color: var(--muted);">Página 1 de 1</div>
 
-    <div id="grid" class="tiendaGrid"></div>
-
-    <!-- Paginación inferior (duplicada) -->
-    <div class="pager" id="pagerBottom">
-      <button id="prevPageBottom" class="btn small" type="button">‹</button>
-      <div id="pagerInfoBottom" class="pagerInfo">Página 1 / 1</div>
-      <button id="nextPageBottom" class="btn small" type="button">›</button>
-
-      <div class="pagerRight">
-        <span class="muted small">Items:</span>
-        <select id="pageSizeSelBottom" class="select">
-          <option value="24">24</option>
-          <option value="48" selected>48</option>
-          <option value="96">96</option>
-          <option value="192">192</option>
-        </select>
-      </div>
-    </div>
-    <div class="pagerNums" id="pagerNumsBottom"></div>
+    <div id="grid" class="productsGrid"></div>
 
     <div id="tiendaModal" class="ttModal hidden" role="dialog" aria-modal="true" aria-label="Detalle de producto">
       <div class="ttModalBackdrop" data-tt="modal-close"></div>
@@ -521,8 +587,6 @@ function TiendaPage() {
   </section>
   `;
 }
-
-export { TiendaPage };
 
 export function wireTienda(rootOrQuery, maybeQuery = "") {
   let root = document;
@@ -548,6 +612,7 @@ export function wireTienda(rootOrQuery, maybeQuery = "") {
 
   const catSel = root.querySelector("#catSel");
   const subSel = root.querySelector("#subSel");
+  const brandSel = root.querySelector("#brandSel");
   const minPrice = root.querySelector("#minPrice");
   const maxPrice = root.querySelector("#maxPrice");
   const priceMode = root.querySelector("#priceMode");
@@ -557,113 +622,115 @@ export function wireTienda(rootOrQuery, maybeQuery = "") {
   const pagerNums = root.querySelector("#pagerNums");
   const prevBtn = root.querySelector("#prevPage");
   const nextBtn = root.querySelector("#nextPage");
-  
-  // Controles del paginador inferior
-  const pageSizeSelBottom = root.querySelector("#pageSizeSelBottom");
-  const pagerNumsBottom = root.querySelector("#pagerNumsBottom");
-  const prevBtnBottom = root.querySelector("#prevPageBottom");
-  const nextBtnBottom = root.querySelector("#nextPageBottom");
 
   const modal = root.querySelector("#tiendaModal");
   const modalBody = root.querySelector("#tiendaModalBody");
 
   let baseRows = [];
   let viewRows = [];
-  let taxonomy = { cats: [], subsByCat: {} };
+  let taxonomy = { cats: [], subsByCat: {}, brands: [] };
 
   let page = 1;
   let pageSize = Number(pageSizeSel?.value || 48) || 48;
 
   // init config
   const fxInit = getFxUsdArs();
-  if (fxInit) fxInput.value = String(fxInit);
+  if (fxInit && fxInput) fxInput.value = String(fxInit);
 
   const marginInit = getMarginPct();
-  if (marginInit !== null) marginInput.value = String(marginInit);
+  if (marginInit !== null && marginInput) marginInput.value = String(marginInit);
 
-  fxInput.addEventListener("input", () => {
-    setFxUsdArs(fxInput.value);
-    page = 1;
-    draw();
-  });
+  if (fxInput) {
+    fxInput.addEventListener("input", () => {
+      setFxUsdArs(fxInput.value);
+      baseRows = enhanceRows(baseRows);
+      page = 1;
+      draw();
+    });
+  }
 
-  marginInput.addEventListener("input", () => {
-    setMarginPct(marginInput.value);
-    page = 1;
-    draw();
-  });
+  if (marginInput) {
+    marginInput.addEventListener("input", () => {
+      setMarginPct(marginInput.value);
+      baseRows = enhanceRows(baseRows);
+      page = 1;
+      draw();
+    });
+  }
 
   function openModal(p) {
-    modalBody.innerHTML = renderModalBody(p);
-    modal.classList.remove("hidden");
+    if (modalBody) modalBody.innerHTML = renderModalBody(p);
+    if (modal) modal.classList.remove("hidden");
     document.body.style.overflow = "hidden";
   }
 
   function closeModal() {
-    modal.classList.add("hidden");
-    modalBody.innerHTML = "";
+    if (modal) modal.classList.add("hidden");
+    if (modalBody) modalBody.innerHTML = "";
     document.body.style.overflow = "";
   }
 
-  modal.addEventListener("click", (ev) => {
-    const close = ev.target.closest("[data-tt='modal-close']");
-    if (close) closeModal();
-  });
+  if (modal) {
+    modal.addEventListener("click", (ev) => {
+      const close = ev.target.closest("[data-tt='modal-close']");
+      if (close) closeModal();
+    });
+  }
 
   document.addEventListener("keydown", (ev) => {
-    if (ev.key === "Escape" && !modal.classList.contains("hidden")) closeModal();
+    if (ev.key === "Escape" && modal && !modal.classList.contains("hidden")) closeModal();
   });
 
-  grid.addEventListener("click", (ev) => {
-    const el = ev.target.closest("[data-tt='product-card']");
-    if (!el) return;
-    const idx = Number(el.dataset.idx);
-    if (!Number.isFinite(idx) || idx < 0 || idx >= viewRows.length) return;
-    openModal(viewRows[idx]);
-  });
+  if (grid) {
+    grid.addEventListener("click", (ev) => {
+      const el = ev.target.closest("[data-tt='product-card']");
+      if (!el) return;
+      const idx = Number(el.dataset.idx);
+      if (!Number.isFinite(idx) || idx < 0 || idx >= viewRows.length) return;
+      openModal(viewRows[idx]);
+    });
+  }
 
   function fillCategorySelects() {
     const catOpts = [`<option value="">Todas las categorías</option>`]
       .concat(taxonomy.cats.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`));
-    catSel.innerHTML = catOpts.join("");
-
-    subSel.innerHTML = `<option value="">Todas las subcategorías</option>`;
+    if (catSel) catSel.innerHTML = catOpts.join("");
+    if (subSel) subSel.innerHTML = `<option value="">Todas las subcategorías</option>`;
+    
+    const brandOpts = [`<option value="">Todas las marcas</option>`]
+      .concat(taxonomy.brands.map((b) => `<option value="${esc(b)}">${esc(b)}</option>`));
+    if (brandSel) brandSel.innerHTML = brandOpts.join("");
   }
 
   function refreshSubOptions() {
-    const cat = (catSel.value || "").trim();
+    const cat = catSel ? (catSel.value || "").trim() : "";
     const subs = cat ? (taxonomy.subsByCat[cat] || []) : [];
     const opts = [`<option value="">Todas las subcategorías</option>`]
       .concat(subs.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`));
-    subSel.innerHTML = opts.join("");
+    if (subSel) subSel.innerHTML = opts.join("");
   }
 
   function setSourceUi(totalItems) {
     if (tiendaSource) tiendaSource.textContent = `Datos: ${dataSource}`;
-    if (countPill) countPill.textContent = `${totalItems} items • ${dataSource}`;
+    if (countPill) countPill.textContent = `${totalItems} productos`;
   }
 
-  function applySort(rows, enhanced) {
-    const mode = (sortSel.value || "relevance").trim();
-    if (mode === "relevance") return { rows, enhanced };
+  function applySort(rows) {
+    const mode = sortSel ? (sortSel.value || "relevance").trim() : "relevance";
+    if (mode === "relevance") return rows;
+
+    const fx = getFxUsdArs();
+    const pm = priceMode ? (priceMode.value || "USD").trim() : "USD";
 
     const copy = [...rows];
-    const enhMap = new Map();
-    enhanced.forEach((e) => enhMap.set(e.sku + "|" + e.providerId, e));
-
     copy.sort((a, b) => {
       if (mode === "nameAsc") return norm(a.name).localeCompare(norm(b.name), "es");
       if (mode === "nameDesc") return norm(b.name).localeCompare(norm(a.name), "es");
       if (mode === "brandAsc") return norm(a.brand).localeCompare(norm(b.brand), "es");
 
       if (mode === "priceAsc" || mode === "priceDesc") {
-        const ea = enhMap.get(a.sku + "|" + a.providerId);
-        const eb = enhMap.get(b.sku + "|" + b.providerId);
-        const fx = getFxUsdArs();
-        const pm = priceMode.value || "USD";
-
-        const pa = ea ? computeComparableFinal({ r: ea, fxUsdArs: fx, mode: pm }) : null;
-        const pb = eb ? computeComparableFinal({ r: eb, fxUsdArs: fx, mode: pm }) : null;
+        const pa = computeComparableFinal({ r: a, fxUsdArs: fx, mode: pm });
+        const pb = computeComparableFinal({ r: b, fxUsdArs: fx, mode: pm });
 
         if (pa === null && pb === null) return 0;
         if (pa === null) return 1;
@@ -671,205 +738,172 @@ export function wireTienda(rootOrQuery, maybeQuery = "") {
 
         return mode === "priceAsc" ? (pa - pb) : (pb - pa);
       }
-
       return 0;
     });
 
-    // rearmamos enhanced en el nuevo orden
-    const orderedEnhanced = copy.map((r) => enhMap.get(r.sku + "|" + r.providerId)).filter(Boolean);
-    return { rows: copy, enhanced: orderedEnhanced };
+    return copy;
   }
 
   function draw() {
-    const q = (qInput.value || "").trim().toLowerCase();
-    const cat = (catSel.value || "").trim();
-    const sub = (subSel.value || "").trim();
+    const q = qInput ? (qInput.value || "").trim().toLowerCase() : "";
+    const selectedBrand = brandSel ? (brandSel.value || "").trim() : "";
 
     const fx = getFxUsdArs();
-    const pm = (priceMode.value || "USD").trim();
-    const min = toNumber(minPrice.value);
-    const max = toNumber(maxPrice.value);
-    const stockOnly = !!inStock.checked;
+    const min = minPrice ? toNumber(minPrice.value) : null;
+    const max = maxPrice ? toNumber(maxPrice.value) : null;
+    const pm = priceMode ? (priceMode.value || "USD").trim() : "USD";
+    const stockOnly = inStock ? !!inStock.checked : false;
 
-    let rows = baseRows;
+    const cat = catSel ? (catSel.value || "").trim() : "";
+    const sub = subSel ? (subSel.value || "").trim() : "";
 
-    rows = rows.filter((r) => {
+    let filtered = baseRows.filter((r) => {
       if (cat && r.cat !== cat) return false;
       if (sub && r.sub !== sub) return false;
+      if (selectedBrand && r.brand !== selectedBrand) return false;
       if (stockOnly && !(r.stock !== null && r.stock > 0)) return false;
 
       if (q) {
         if (!r._search || !r._search.includes(q)) return false;
       }
 
+      if (min !== null || max !== null) {
+        const comparable = computeComparableFinal({ r, fxUsdArs: fx, mode: pm });
+        if (comparable === null) return false;
+        if (min !== null && comparable < min) return false;
+        if (max !== null && comparable > max) return false;
+      }
+
       return true;
     });
 
-    // Enhanced antes para poder filtrar por precio final
-    let enhanced = enhanceRows(rows);
+    filtered = applySort(filtered);
 
-    if (min !== null || max !== null) {
-      enhanced = enhanced.filter((e) => {
-        const comp = computeComparableFinal({ r: e, fxUsdArs: fx, mode: pm });
-        if (comp === null) return false;
-        if (min !== null && comp < min) return false;
-        if (max !== null && comp > max) return false;
-        return true;
-      });
-      // rows debe acompañar
-      const keep = new Set(enhanced.map((e) => e.sku + "|" + e.providerId));
-      rows = rows.filter((r) => keep.has(r.sku + "|" + r.providerId));
-    }
-
-    // sort
-    ({ rows, enhanced } = applySort(rows, enhanced));
-
-    const totalItems = enhanced.length;
-
-    // paginado
-    pageSize = Number(pageSizeSel.value) || 48;
+    const totalItems = filtered.length;
+    pageSize = pageSizeSel ? Number(pageSizeSel.value) || 48 : 48;
     const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
     page = clamp(page, 1, totalPages);
 
     const start = (page - 1) * pageSize;
-    viewRows = enhanced.slice(start, start + pageSize);
+    const pageRows = filtered.slice(start, start + pageSize);
+
+    viewRows = pageRows;
 
     setSourceUi(totalItems);
     renderPager({ totalItems, page, pageSize, root });
 
-    grid.innerHTML = viewRows.map((p, i) => renderProductCard(p, i)).join("");
-    if (!viewRows.length) {
-      grid.innerHTML = `<div class="emptyState">No hay productos para mostrar</div>`;
+    if (grid) {
+      grid.innerHTML = pageRows.map((r, idx) => renderProductCard(r, idx)).join("");
+      
+      // Inicializar lazy loading después de renderizar
+      setTimeout(() => setupLazyLoading(), 0);
     }
-    
-    // Scroll suave al top cuando cambia la página
-    scrollToTop();
   }
-  
-  // Función para hacer scroll suave hacia arriba
-  function scrollToTop() {
-    window.scrollTo({
-      top: 0,
-      behavior: 'smooth'
+
+  // eventos filtros
+  if (qInput) {
+    let t = null;
+    qInput.addEventListener("input", () => {
+      clearTimeout(t);
+      t = setTimeout(() => { page = 1; draw(); }, 150);
     });
   }
 
-  let t = null;
-  qInput.addEventListener("input", () => {
-    clearTimeout(t);
-    t = setTimeout(() => { page = 1; draw(); }, 150);
-  });
+  if (catSel) {
+    catSel.addEventListener("change", () => {
+      refreshSubOptions();
+      page = 1;
+      draw();
+    });
+  }
 
-  catSel.addEventListener("change", () => {
-    refreshSubOptions();
-    page = 1;
-    draw();
-  });
-  subSel.addEventListener("change", () => { page = 1; draw(); });
+  if (subSel) subSel.addEventListener("change", () => { page = 1; draw(); });
+  if (brandSel) brandSel.addEventListener("change", () => { page = 1; draw(); });
 
-  const debouncedPriceDraw = () => {
-    clearTimeout(t);
-    t = setTimeout(() => { page = 1; draw(); }, 150);
-  };
-  minPrice.addEventListener("input", debouncedPriceDraw);
-  maxPrice.addEventListener("input", debouncedPriceDraw);
-  priceMode.addEventListener("change", () => { page = 1; draw(); });
-  inStock.addEventListener("change", () => { page = 1; draw(); });
-  sortSel.addEventListener("change", draw);
-  pageSizeSel.addEventListener("change", () => { 
-    pageSizeSelBottom.value = pageSizeSel.value;
-    page = 1; 
-    draw(); 
-  });
+  if (minPrice || maxPrice) {
+    let t = null;
+    const debouncedPriceDraw = () => {
+      clearTimeout(t);
+      t = setTimeout(() => { page = 1; draw(); }, 150);
+    };
+    if (minPrice) minPrice.addEventListener("input", debouncedPriceDraw);
+    if (maxPrice) maxPrice.addEventListener("input", debouncedPriceDraw);
+  }
 
-  prevBtn.addEventListener("click", () => { page = Math.max(1, page - 1); draw(); });
-  nextBtn.addEventListener("click", () => { page = page + 1; draw(); });
-  
-  // Event listeners para paginador inferior
-  prevBtnBottom.addEventListener("click", () => { page = Math.max(1, page - 1); draw(); });
-  nextBtnBottom.addEventListener("click", () => { page = page + 1; draw(); });
+  if (priceMode) priceMode.addEventListener("change", () => { page = 1; draw(); });
+  if (inStock) inStock.addEventListener("change", () => { page = 1; draw(); });
+  if (sortSel) sortSel.addEventListener("change", draw);
 
-  pagerNums.addEventListener("click", (ev) => {
-    const b = ev.target.closest("[data-page]");
-    if (!b) return;
-    const p = Number(b.dataset.page);
-    if (!Number.isFinite(p)) return;
-    page = p;
-    draw();
-  });
-  
-  // Event listener para números del paginador inferior
-  pagerNumsBottom.addEventListener("click", (ev) => {
-    const b = ev.target.closest("[data-page]");
-    if (!b) return;
-    const p = Number(b.dataset.page);
-    if (!Number.isFinite(p)) return;
-    page = p;
-    draw();
-  });
-  
-  // Sincronizar el selector de tamaño de página inferior con el superior
-  pageSizeSelBottom.addEventListener("change", () => {
-    pageSizeSel.value = pageSizeSelBottom.value;
-    page = 1;
-    draw();
-  });
+  if (prevBtn) prevBtn.addEventListener("click", () => { page = Math.max(1, page - 1); draw(); });
+  if (nextBtn) nextBtn.addEventListener("click", () => { page = page + 1; draw(); });
+
+  if (pagerNums) {
+    pagerNums.addEventListener("click", (ev) => {
+      const b = ev.target.closest("[data-page]");
+      if (!b) return;
+      const p = Number(b.dataset.page);
+      if (!Number.isFinite(p)) return;
+      page = p;
+      draw();
+    });
+  }
+
+  if (pageSizeSel) pageSizeSel.addEventListener("change", () => { page = 1; draw(); });
 
   async function bootstrap() {
-    if (errBox) {
-      errBox.style.display = "none";
-      errBox.textContent = "";
-    }
-
     try {
       cachedProviders = await loadProvidersFromApi();
-      const products = await loadProductsFromApi();
       dataSource = "API";
-
-      baseRows = products.map((r) => {
-        const { cat, sub } = classifyProduct(r);
-        return {
-          ...r,
-          cat,
-          sub,
-          _search: `${r.sku} ${r.name} ${r.brand}`.toLowerCase(),
-        };
-      });
     } catch (err) {
-      dataSource = "MOCK";
+      lastApiError = String(err);
       cachedProviders = mockProviders;
-
-      baseRows = (mockProducts || []).map((r) => {
-        const rr = {
-          sku: String(r.sku ?? r.id ?? ""),
-          providerId: String(r.providerId ?? r.provider ?? "elit"),
-          name: String(r.name ?? ""),
-          brand: String(r.brand ?? ""),
-          price: toNumber(r.price),
-          currency: String(r.currency ?? "USD"),
-          ivaRate: toNumber(r.ivaRate ?? r.iva),
-          stock: toNumber(r.stock),
-          imageUrl: r.imageUrl || r.image || null,
-          thumbUrl: r.thumbUrl || r.thumbnail || null,
-        };
-        const { cat, sub } = classifyProduct(rr);
-        return {
-          ...rr,
-          cat,
-          sub,
-          _search: `${rr.sku} ${rr.name} ${rr.brand}`.toLowerCase(),
-        };
-      });
-
-      const hint = lastApiError ? `API error: ${lastApiError}` : "API no disponible";
+      dataSource = "MOCK";
       if (errBox) {
-        errBox.style.display = "block";
-        errBox.textContent = `${hint}. Si querés ver el diagnóstico real: /api/health y /api/getProducts?limit=5`;
+        errBox.textContent = "Error cargando proveedores: " + lastApiError;
+        errBox.hidden = false;
       }
-
-      console.error("Tienda bootstrap error:", err);
     }
 
+    let rows;
+    try {
+      rows = await loadProductsFromApi({ providerId: "", q: "" });
+      dataSource = "API";
+      if (errBox) errBox.hidden = true;
+    } catch (err) {
+      lastApiError = String(err);
+      rows = mockProducts;
+      dataSource = "MOCK";
+      if (errBox) {
+        errBox.textContent = "Error cargando productos: " + lastApiError;
+        errBox.hidden = false;
+      }
+    }
+
+    const normalized = rows.map((p) => {
+      const r = {
+        sku: String(p.sku ?? p.id ?? ""),
+        providerId: String(p.providerId ?? p.provider ?? "elit"),
+        name: String(p.name ?? ""),
+        brand: String(p.brand ?? ""),
+        price: toNumber(p.price),
+        currency: String(p.currency ?? "USD"),
+        ivaRate: toNumber(p.ivaRate ?? p.iva),
+        stock: toNumber(p.stock),
+        imageUrl: p.imageUrl || p.image || null,
+        thumbUrl: p.thumbUrl || p.thumbnail || null,
+      };
+
+      const { cat, sub } = classifyProduct(r);
+
+      return {
+        ...r,
+        cat,
+        sub,
+        _search: `${r.sku} ${r.name} ${r.brand}`.toLowerCase(),
+      };
+    });
+
+    baseRows = enhanceRows(normalized);
     taxonomy = buildTaxonomy(baseRows);
     fillCategorySelects();
     refreshSubOptions();
