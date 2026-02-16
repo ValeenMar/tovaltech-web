@@ -4,6 +4,8 @@
 import { HomePage, wireHome } from './pages/home.js';
 import { TiendaPage, wireTienda } from './pages/tienda.js';
 import { CatalogoPage, wireCatalogo } from './pages/catalogo.js';
+import { LoginPage, wireLogin } from './pages/login.js';
+import { ContactoPage, wireContacto } from './pages/contacto.js';
 
 // Estado global
 let currentUser = null;
@@ -22,6 +24,8 @@ const routes = {
   '/': { view: HomePage, wire: wireHome, auth: false },
   '/tienda': { view: TiendaPage, wire: wireTienda, auth: false },
   '/catalogo': { view: CatalogoPage, wire: wireCatalogo, auth: 'admin' },
+  '/login': { view: LoginPage, wire: wireLogin, auth: false },
+  '/contacto': { view: ContactoPage, wire: wireContacto, auth: false },
   // ... más rutas según necesidad
 };
 
