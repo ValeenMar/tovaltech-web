@@ -24,6 +24,32 @@ function formatMoney(amount) {
   }).format(amount);
 }
 
+let fxUsdArs = null;
+let fxMetaText = "";
+
+async function refreshFxUsdArs() {
+  try {
+    const res = await fetch("/api/dollar-rate", { method: "GET", cache: "no-store" });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data) throw new Error("Bad response");
+
+    const venta = typeof data.venta === "number" ? data.venta : Number(data.venta);
+    if (!Number.isFinite(venta) || venta <= 0) throw new Error("Invalid venta");
+
+    fxUsdArs = venta;
+
+    const fuente = data.fuente || "API";
+    const nombre = data.nombre || "Dólar Oficial";
+    const fecha = data.fechaActualizacion ? new Date(data.fechaActualizacion) : null;
+
+    fxMetaText = `${nombre} · ${fuente}` + (fecha ? ` · ${fecha.toLocaleString("es-AR")}` : "");
+
+    return { ok: true, venta };
+  } catch (err) {
+    return { ok: false, error: String(err?.message || err) };
+  }
+}
+
 export function CarritoPage() {
   return `
     <section class="page carritoPage">
@@ -35,8 +61,9 @@ export function CarritoPage() {
       <div class="carritoControls">
         <div class="cartSettings">
           <label>
-            <span>FX USD→ARS:</span>
-            <input id="cartFx" class="input small" type="number" value="1420" min="1" step="0.01" />
+            <span>FX USD→ARS (API):</span>
+            <input id="cartFx" class="input small" type="text" value="Cargando..." disabled />
+            <small id="cartFxMeta" class="muted"></small>
           </label>
           <label>
             <span>Margen %:</span>
@@ -81,15 +108,24 @@ export function wireCarrito() {
   const empty = document.querySelector("#emptyCart");
   const totalEl = document.querySelector("#totalAmount");
   const fxInput = document.querySelector("#cartFx");
+  const fxMetaEl = document.querySelector("#cartFxMeta");
   const margenInput = document.querySelector("#cartMargen");
   const clearBtn = document.querySelector("#clearCart");
   const whatsappBtn = document.querySelector("#shareWhatsApp");
   const pdfBtn = document.querySelector("#exportPDF");
 
+  function updateFxUI() {
+    if (fxInput) {
+      fxInput.value = fxUsdArs ? String(fxUsdArs) : "No disponible";
+    }
+    if (fxMetaEl) {
+      fxMetaEl.textContent = fxMetaText || "";
+    }
+  }
+
   function render() {
     const cart = getCart();
-    const fx = Number(fxInput.value) || 1420;
-    const margen = Number(margenInput.value) || 25;
+    const margen = Number(margenInput?.value) || 25;
 
     if (cart.length === 0) {
       itemsContainer.innerHTML = "";
@@ -105,17 +141,17 @@ export function wireCarrito() {
       const qty = item.quantity || 1;
       const price = item.price || 0;
       const iva = item.ivaRate || 10.5;
-      
+
       const withIva = price * (1 + iva / 100);
       const withMargen = withIva * (1 + margen / 100);
-      
+
       let inArs = withMargen;
       if (String(item.currency).toUpperCase() === "USD") {
-        inArs = withMargen * fx;
+        inArs = fxUsdArs ? (withMargen * fxUsdArs) : null;
       }
-      
-      const subtotal = inArs * qty;
-      
+
+      const subtotal = inArs === null ? null : inArs * qty;
+
       return `
         <div class="cartItem" data-idx="${idx}">
           <div class="cartItemImg">
@@ -149,8 +185,15 @@ export function wireCarrito() {
       `;
     }).join("");
 
-    const total = calculateTotals(cart, fx, margen);
-    totalEl.textContent = formatMoney(total);
+    const fxForTotals = fxUsdArs || 0;
+    const total = calculateTotals(cart, fxForTotals, margen);
+    totalEl.textContent = fxUsdArs ? formatMoney(total) : "-";
+  }
+
+  async function syncFx({ rerender = false } = {}) {
+    await refreshFxUsdArs();
+    updateFxUI();
+    if (rerender) render();
   }
 
   itemsContainer.addEventListener("click", (e) => {
@@ -188,7 +231,6 @@ export function wireCarrito() {
     }
   });
 
-  fxInput.addEventListener("input", render);
   margenInput.addEventListener("input", render);
 
   clearBtn.addEventListener("click", () => {
@@ -200,18 +242,26 @@ export function wireCarrito() {
 
   whatsappBtn.addEventListener("click", () => {
     const cart = getCart();
-    const fx = Number(fxInput.value) || 1420;
-    const margen = Number(margenInput.value) || 25;
-    
-    const message = generateWhatsAppMessage(cart, fx, margen);
+    const margen = Number(margenInput?.value) || 25;
+
+    if (!fxUsdArs) {
+      alert("No hay FX USD→ARS disponible. Probá de nuevo en unos segundos.");
+      return;
+    }
+
+    const message = generateWhatsAppMessage(cart, fxUsdArs, margen);
     const tel = "5491168831802";
     window.open(`https://wa.me/${tel}?text=${encodeURIComponent(message)}`, "_blank");
   });
 
   pdfBtn.addEventListener("click", () => {
     alert("Exportar a PDF - Próximamente");
-    // TODO: Implementar generación de PDF
   });
 
-  render();
+  (async () => {
+    await syncFx({ rerender: false });
+    render();
+    // refresco cada 5 min (alineado con cache-control del endpoint)
+    setInterval(() => syncFx({ rerender: true }), 300000);
+  })();
 }

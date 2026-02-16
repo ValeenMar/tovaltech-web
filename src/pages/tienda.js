@@ -70,17 +70,47 @@ function formatPct(n) {
   return `${v.toFixed(1)}%`;
 }
 
+let FX_USD_ARS = null;
+let FX_META = { fuente: "", nombre: "", fechaActualizacion: "" };
+
 function getFxUsdArs() {
-  const v = localStorage.getItem("toval_fx_usd_ars");
-  const n = toNumber(v);
-  return n && n > 0 ? n : null;
+  return FX_USD_ARS;
 }
 
-function setFxUsdArs(v) {
-  const n = toNumber(v);
-  if (!n) localStorage.removeItem("toval_fx_usd_ars");
-  else localStorage.setItem("toval_fx_usd_ars", String(n));
+function getFxMetaText() {
+  const parts = [];
+  if (FX_META.nombre) parts.push(FX_META.nombre);
+  if (FX_META.fuente) parts.push(FX_META.fuente);
+  if (FX_META.fechaActualizacion) {
+    try {
+      parts.push(new Date(FX_META.fechaActualizacion).toLocaleString("es-AR"));
+    } catch (_) {}
+  }
+  return parts.join(" · ");
 }
+
+async function refreshFxUsdArs() {
+  try {
+    const res = await fetch("/api/dollar-rate", { method: "GET", cache: "no-store" });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data) throw new Error("Bad /api/dollar-rate response");
+
+    const venta = typeof data.venta === "number" ? data.venta : Number(data.venta);
+    if (!Number.isFinite(venta) || venta <= 0) throw new Error("Invalid venta");
+
+    FX_USD_ARS = venta;
+    FX_META = {
+      fuente: String(data.fuente || "API"),
+      nombre: String(data.nombre || "Dólar Oficial"),
+      fechaActualizacion: String(data.fechaActualizacion || ""),
+    };
+
+    return { ok: true, venta };
+  } catch (err) {
+    return { ok: false, error: String(err?.message || err) };
+  }
+}
+
 
 function getMarginPct() {
   const v = localStorage.getItem("toval_margin_pct");
@@ -487,8 +517,8 @@ export function TiendaPage() {
 
     <div class="tiendaConfig">
       <label>
-        <span>FX USD →ARS</span>
-        <input id="fxUsdArs" class="input small" placeholder="1421" inputmode="decimal" />
+        <span>FX USD→ARS (API)</span>
+        <input id="fxUsdArs" class="input small" value="Cargando..." disabled />
       </label>
       <label>
         <span>Margen %</span>
@@ -632,22 +662,17 @@ export function wireTienda(rootOrQuery, maybeQuery = "") {
 
   let page = 1;
   let pageSize = Number(pageSizeSel?.value || 48) || 48;
-
-  // init config
-  const fxInit = getFxUsdArs();
-  if (fxInit && fxInput) fxInput.value = String(fxInit);
+  // init FX (solo API)
+  try { localStorage.removeItem("toval_fx_usd_ars"); } catch (_) {}
+  if (fxInput) {
+    fxInput.disabled = true;
+    fxInput.readOnly = true;
+    fxInput.value = "Cargando...";
+    fxInput.title = "Se actualiza automáticamente desde /api/dollar-rate";
+  }
 
   const marginInit = getMarginPct();
   if (marginInit !== null && marginInput) marginInput.value = String(marginInit);
-
-  if (fxInput) {
-    fxInput.addEventListener("input", () => {
-      setFxUsdArs(fxInput.value);
-      baseRows = enhanceRows(baseRows);
-      page = 1;
-      draw();
-    });
-  }
 
   if (marginInput) {
     marginInput.addEventListener("input", () => {
@@ -851,6 +876,15 @@ export function wireTienda(rootOrQuery, maybeQuery = "") {
   if (pageSizeSel) pageSizeSel.addEventListener("change", () => { page = 1; draw(); });
 
   async function bootstrap() {
+    // FX USD→ARS desde API
+    await refreshFxUsdArs();
+    if (fxInput) {
+      const fx = getFxUsdArs();
+      fxInput.value = fx ? String(fx) : "No disponible";
+      const meta = getFxMetaText();
+      if (meta) fxInput.title = meta;
+    }
+
     try {
       cachedProviders = await loadProvidersFromApi();
       dataSource = "API";
@@ -912,4 +946,22 @@ export function wireTienda(rootOrQuery, maybeQuery = "") {
   }
 
   bootstrap();
+
+  // refresco FX cada 5 min
+  setInterval(async () => {
+    const prev = getFxUsdArs();
+    await refreshFxUsdArs();
+    const next = getFxUsdArs();
+
+    if (fxInput) {
+      fxInput.value = next ? String(next) : "No disponible";
+      const meta = getFxMetaText();
+      if (meta) fxInput.title = meta;
+    }
+
+    if (next && next !== prev && baseRows.length) {
+      baseRows = enhanceRows(baseRows);
+      draw();
+    }
+  }, 300000);
 }

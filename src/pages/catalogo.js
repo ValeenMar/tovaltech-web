@@ -74,17 +74,47 @@ function formatPct(n) {
   return `${v.toFixed(1)}%`;
 }
 
+let FX_USD_ARS = null;
+let FX_META = { fuente: "", nombre: "", fechaActualizacion: "" };
+
 function getFxUsdArs() {
-  const v = localStorage.getItem("toval_fx_usd_ars");
-  const n = toNumber(v);
-  return n && n > 0 ? n : null;
+  return FX_USD_ARS;
 }
 
-function setFxUsdArs(v) {
-  const n = toNumber(v);
-  if (!n) localStorage.removeItem("toval_fx_usd_ars");
-  else localStorage.setItem("toval_fx_usd_ars", String(n));
+function getFxMetaText() {
+  const parts = [];
+  if (FX_META.nombre) parts.push(FX_META.nombre);
+  if (FX_META.fuente) parts.push(FX_META.fuente);
+  if (FX_META.fechaActualizacion) {
+    try {
+      parts.push(new Date(FX_META.fechaActualizacion).toLocaleString("es-AR"));
+    } catch (_) {}
+  }
+  return parts.join(" · ");
 }
+
+async function refreshFxUsdArs() {
+  try {
+    const res = await fetch("/api/dollar-rate", { method: "GET", cache: "no-store" });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data) throw new Error("Bad /api/dollar-rate response");
+
+    const venta = typeof data.venta === "number" ? data.venta : Number(data.venta);
+    if (!Number.isFinite(venta) || venta <= 0) throw new Error("Invalid venta");
+
+    FX_USD_ARS = venta;
+    FX_META = {
+      fuente: String(data.fuente || "API"),
+      nombre: String(data.nombre || "Dólar Oficial"),
+      fechaActualizacion: String(data.fechaActualizacion || ""),
+    };
+
+    return { ok: true, venta };
+  } catch (err) {
+    return { ok: false, error: String(err?.message || err) };
+  }
+}
+
 
 async function loadProvidersFromApi() {
   const res = await fetch("/api/getProviders", { method: "GET" });
@@ -380,7 +410,7 @@ export function CatalogoPage() {
         <option value="brandAsc">Orden: Marca A→Z</option>
       </select>
 
-      <input id="fxUsdArs" class="input fxInput" placeholder="FX USD→ARS (opcional)" inputmode="decimal" />
+      <input id="fxUsdArs" class="input fxInput" value="Cargando..." disabled />
 
       <div class="viewToggle">
         <button id="viewTable" class="btn small">Tabla</button>
@@ -389,7 +419,7 @@ export function CatalogoPage() {
 
         <div class="filterSection">
           <label class="filterLabel">Tipo de Cambio USD→ARS</label>
-          <input id="fxUsdArs" class="input" placeholder="Ej: 1050" inputmode="decimal" />
+          <input id="fxUsdArs" class="input" value="Cargando..." disabled />
         </div>
 
         <div class="activeFilters" id="activeFilters"></div>
@@ -486,7 +516,7 @@ export function wireCatalogo(rootOrQuery, maybeQuery = "") {
   if (qInput && initialQ) qInput.value = initialQ;
   const countPill = root.querySelector("#countPill");
   const catSource = root.querySelector("#catSource");
-  const fxInput = root.querySelector("#fxUsdArs");
+  const fxInputs = root.querySelectorAll("#fxUsdArs");
 
   const catSel = root.querySelector("#catSel");
   const subSel = root.querySelector("#subSel");
@@ -517,15 +547,21 @@ export function wireCatalogo(rootOrQuery, maybeQuery = "") {
   // estado paginado
   let page = 1;
   let pageSize = Number(pageSizeSel?.value || 50) || 50;
+  // FX USD→ARS (solo API)
+  try { localStorage.removeItem("toval_fx_usd_ars"); } catch (_) {}
 
-  // FX UI
-  const fxInit = getFxUsdArs();
-  if (fxInit) fxInput.value = String(fxInit);
+  function updateFxInputs() {
+    const fx = getFxUsdArs();
+    const meta = getFxMetaText();
+    for (const el of fxInputs) {
+      el.disabled = true;
+      el.readOnly = true;
+      el.value = fx ? String(fx) : "No disponible";
+      if (meta) el.title = meta;
+    }
+  }
 
-  fxInput.addEventListener("input", () => {
-    setFxUsdArs(fxInput.value);
-    draw(); // re-render sin volver a pedir API
-  });
+  updateFxInputs();
 
   function setView(next) {
     view = next;
@@ -752,6 +788,9 @@ export function wireCatalogo(rootOrQuery, maybeQuery = "") {
   pageSizeSel.addEventListener("change", () => { page = 1; scrollToTop(); draw(); });
 
   async function bootstrap() {
+    await refreshFxUsdArs();
+    updateFxInputs();
+
     try {
       cachedProviders = await loadProvidersFromApi();
       dataSource = "API";
@@ -814,4 +853,13 @@ export function wireCatalogo(rootOrQuery, maybeQuery = "") {
   }
 
   bootstrap();
+
+  // refresco FX cada 5 min
+  setInterval(async () => {
+    const prev = getFxUsdArs();
+    await refreshFxUsdArs();
+    const next = getFxUsdArs();
+    updateFxInputs();
+    if (next && next !== prev) draw();
+  }, 300000);
 }
