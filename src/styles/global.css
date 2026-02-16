@@ -918,8 +918,43 @@ input[type="checkbox"] {
   display: none;
 }
 
-.filtersSidebar.isCollapsed .filtersSidebarInner {
-  display: none;
+
+/* Collapsed: mantener panel como "rail" y expandir al hover (desktop) */
+.filtersSidebar.isCollapsed{
+  width: 64px;
+  padding: 12px 10px;
+  overflow: hidden;
+  z-index: 15;
+}
+
+.filtersSidebar.isCollapsed .filtersSidebarInner{
+  display: block;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-8px);
+  transition: opacity .18s ease, transform .18s ease;
+}
+
+.filtersSidebar.isCollapsed:hover{
+  width: 320px;
+  padding: 20px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  z-index: 25;
+}
+
+.filtersSidebar.isCollapsed:hover .filtersSidebarInner{
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+.filtersSidebar.isCollapsed:hover .sidebarCollapseLbl{
+  display: inline;
+}
+
+.filtersSidebar.isCollapsed:hover .sidebarCollapseChev{
+  transform: rotate(180deg);
 }
 
 .sidebarCloseBtn {
@@ -1003,20 +1038,26 @@ body.filtersNoScroll {
 
   /* Drawer left */
   .filtersSidebar {
-  position: sticky;
-  top: 84px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 18px;
-  background: var(--bg1);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  box-shadow: var(--shadow);
-  max-height: calc(100vh - 120px);
-  overflow-y: auto;
-  overflow-x: hidden;
-}
+    position: fixed;
+    left: 12px;
+    top: 76px; /* debajo del header */
+    bottom: 12px;
+    width: min(92vw, 360px);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 18px;
+    background: var(--bg1);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    max-height: none;
+    overflow-y: auto;
+    overflow-x: hidden;
+    transform: translateX(calc(-100% - 24px));
+    transition: transform .22s ease;
+    z-index: 200;
+  }
 
   .filtersSidebar.isOpen {
     transform: translateX(0);
