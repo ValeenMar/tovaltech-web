@@ -251,10 +251,29 @@ function renderProductCard(p, idx) {
   // Importante: si ELIT te da miniaturas de mala calidad, preferimos imageUrl.
   const img = p.imageUrl || p.thumbUrl || null;
 
-  const priceUsd = p.totalWithIvaAndMargin !== null ? formatMoney(p.totalWithIvaAndMargin, p.currency) : "-";
-  const arsMoney = p.arsTotal !== null ? formatMoney(p.arsTotal, "ARS") : "-";
+  // Precio base original
+  const basePrice = p.price !== null ? formatMoney(p.price, p.currency) : null;
+  
+  // Precio final (con IVA + margen)
+  const priceUsd = p.totalWithIvaAndMargin !== null ? formatMoney(p.totalWithIvaAndMargin, p.currency) : null;
+  
+  // Precio en ARS
+  const arsMoney = p.arsTotal !== null ? formatMoney(p.arsTotal, "ARS") : null;
 
   const catChip = p.cat ? `<span class="pChip">${esc(p.cat)}</span>` : "";
+
+  // Mostrar precio: priorizar precio final, si no hay mostrar base, si no hay mostrar mensaje
+  let priceDisplay = '';
+  if (priceUsd) {
+    priceDisplay = `<div class="pPriceBase">${esc(priceUsd)}</div>`;
+  } else if (basePrice) {
+    priceDisplay = `<div class="pPriceBase">${esc(basePrice)}</div>`;
+  } else {
+    priceDisplay = `<div class="pPriceBase muted">Sin precio</div>`;
+  }
+  
+  // Precio ARS (solo si hay FX configurado)
+  const arsDisplay = arsMoney ? `<div class="pPriceIva">${esc(arsMoney)}</div>` : '';
 
   return `
     <div class="pCard" data-tt="product-card" data-idx="${idx}" style="cursor:pointer;">
@@ -271,8 +290,8 @@ function renderProductCard(p, idx) {
         </div>
 
         <div class="pPricing">
-          <div class="pPriceBase">${esc(priceUsd)}</div>
-          ${p.fxUsdArs ? `<div class="pPriceIva">${esc(arsMoney)}</div>` : ""}
+          ${priceDisplay}
+          ${arsDisplay}
         </div>
       </div>
     </div>
@@ -355,14 +374,27 @@ function renderPager({ totalItems, page, pageSize, root }) {
   const prevBtn = root.querySelector("#prevPage");
   const nextBtn = root.querySelector("#nextPage");
   const pagerNums = root.querySelector("#pagerNums");
+  
+  // Paginador inferior
+  const pagerInfoBottom = root.querySelector("#pagerInfoBottom");
+  const prevBtnBottom = root.querySelector("#prevPageBottom");
+  const nextBtnBottom = root.querySelector("#nextPageBottom");
+  const pagerNumsBottom = root.querySelector("#pagerNumsBottom");
 
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const p = clamp(page, 1, totalPages);
 
-  if (pagerInfo) pagerInfo.textContent = `Página ${p} / ${totalPages}`;
+  const pageText = `Página ${p} / ${totalPages}`;
+  if (pagerInfo) pagerInfo.textContent = pageText;
+  if (pagerInfoBottom) pagerInfoBottom.textContent = pageText;
 
-  if (prevBtn) prevBtn.disabled = p <= 1;
-  if (nextBtn) nextBtn.disabled = p >= totalPages;
+  const prevDisabled = p <= 1;
+  const nextDisabled = p >= totalPages;
+  
+  if (prevBtn) prevBtn.disabled = prevDisabled;
+  if (nextBtn) nextBtn.disabled = nextDisabled;
+  if (prevBtnBottom) prevBtnBottom.disabled = prevDisabled;
+  if (nextBtnBottom) nextBtnBottom.disabled = nextDisabled;
 
   const nums = [];
   if (totalPages <= 9) {
@@ -380,11 +412,14 @@ function renderPager({ totalItems, page, pageSize, root }) {
     }
   }
 
-  pagerNums.innerHTML = nums.map((n) => {
+  const numsHtml = nums.map((n) => {
     if (n === "…") return `<span class="pagerDots">…</span>`;
     const active = n === p ? "active" : "";
     return `<button class="pagerNum ${active}" data-page="${n}" type="button">${n}</button>`;
   }).join("");
+  
+  if (pagerNums) pagerNums.innerHTML = numsHtml;
+  if (pagerNumsBottom) pagerNumsBottom.innerHTML = numsHtml;
 
   return { totalPages, page: p };
 }
@@ -458,6 +493,24 @@ function TiendaPage() {
 
     <div id="grid" class="tiendaGrid"></div>
 
+    <!-- Paginación inferior (duplicada) -->
+    <div class="pager" id="pagerBottom">
+      <button id="prevPageBottom" class="btn small" type="button">‹</button>
+      <div id="pagerInfoBottom" class="pagerInfo">Página 1 / 1</div>
+      <button id="nextPageBottom" class="btn small" type="button">›</button>
+
+      <div class="pagerRight">
+        <span class="muted small">Items:</span>
+        <select id="pageSizeSelBottom" class="select">
+          <option value="24">24</option>
+          <option value="48" selected>48</option>
+          <option value="96">96</option>
+          <option value="192">192</option>
+        </select>
+      </div>
+    </div>
+    <div class="pagerNums" id="pagerNumsBottom"></div>
+
     <div id="tiendaModal" class="ttModal hidden" role="dialog" aria-modal="true" aria-label="Detalle de producto">
       <div class="ttModalBackdrop" data-tt="modal-close"></div>
       <div class="ttModalPanel">
@@ -504,6 +557,12 @@ export function wireTienda(rootOrQuery, maybeQuery = "") {
   const pagerNums = root.querySelector("#pagerNums");
   const prevBtn = root.querySelector("#prevPage");
   const nextBtn = root.querySelector("#nextPage");
+  
+  // Controles del paginador inferior
+  const pageSizeSelBottom = root.querySelector("#pageSizeSelBottom");
+  const pagerNumsBottom = root.querySelector("#pagerNumsBottom");
+  const prevBtnBottom = root.querySelector("#prevPageBottom");
+  const nextBtnBottom = root.querySelector("#nextPageBottom");
 
   const modal = root.querySelector("#tiendaModal");
   const modalBody = root.querySelector("#tiendaModalBody");
@@ -682,6 +741,17 @@ export function wireTienda(rootOrQuery, maybeQuery = "") {
     if (!viewRows.length) {
       grid.innerHTML = `<div class="emptyState">No hay productos para mostrar</div>`;
     }
+    
+    // Scroll suave al top cuando cambia la página
+    scrollToTop();
+  }
+  
+  // Función para hacer scroll suave hacia arriba
+  function scrollToTop() {
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
   }
 
   let t = null;
@@ -706,10 +776,18 @@ export function wireTienda(rootOrQuery, maybeQuery = "") {
   priceMode.addEventListener("change", () => { page = 1; draw(); });
   inStock.addEventListener("change", () => { page = 1; draw(); });
   sortSel.addEventListener("change", draw);
-  pageSizeSel.addEventListener("change", () => { page = 1; draw(); });
+  pageSizeSel.addEventListener("change", () => { 
+    pageSizeSelBottom.value = pageSizeSel.value;
+    page = 1; 
+    draw(); 
+  });
 
   prevBtn.addEventListener("click", () => { page = Math.max(1, page - 1); draw(); });
   nextBtn.addEventListener("click", () => { page = page + 1; draw(); });
+  
+  // Event listeners para paginador inferior
+  prevBtnBottom.addEventListener("click", () => { page = Math.max(1, page - 1); draw(); });
+  nextBtnBottom.addEventListener("click", () => { page = page + 1; draw(); });
 
   pagerNums.addEventListener("click", (ev) => {
     const b = ev.target.closest("[data-page]");
@@ -717,6 +795,23 @@ export function wireTienda(rootOrQuery, maybeQuery = "") {
     const p = Number(b.dataset.page);
     if (!Number.isFinite(p)) return;
     page = p;
+    draw();
+  });
+  
+  // Event listener para números del paginador inferior
+  pagerNumsBottom.addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-page]");
+    if (!b) return;
+    const p = Number(b.dataset.page);
+    if (!Number.isFinite(p)) return;
+    page = p;
+    draw();
+  });
+  
+  // Sincronizar el selector de tamaño de página inferior con el superior
+  pageSizeSelBottom.addEventListener("change", () => {
+    pageSizeSel.value = pageSizeSelBottom.value;
+    page = 1;
     draw();
   });
 

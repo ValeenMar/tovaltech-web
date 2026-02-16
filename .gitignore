@@ -106,3 +106,24 @@ api/local.settings.json
 
 # Node
 node_modules/
+npm-debug.log
+yarn-error.log
+
+# Archivos con credenciales
+.env
+.env.local
+*.local
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Datos descargados
+*.csv
+*.xlsx
