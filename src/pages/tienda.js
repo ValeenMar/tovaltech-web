@@ -92,7 +92,7 @@ export async function wireTienda() {
 
 async function loadProducts() {
   try {
-    const res = await fetch('/api/getProducts?limit=1000');
+    const res = await fetch('/api/getProducts?limit=5000');
     const data = await res.json();
     
     if (!res.ok || !data.ok) {

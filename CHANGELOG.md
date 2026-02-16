@@ -1,5 +1,37 @@
 # CHANGELOG - TovalTech Refactor
 
+## v2.0.3 - Fix Límite de Productos (16/02/2026)
+
+### 🐛 Bug Fixes
+
+**Problema 1**: Solo se mostraban 1000 productos en la tienda, faltaban ~1550 productos (total: ~2550).
+
+**Causa**: Límite hardcodeado en `fetch('/api/getProducts?limit=1000')` en tienda.js.
+
+**Fix aplicado**:
+- ✅ `src/pages/tienda.js` - Aumentado límite de 1000 → 5000
+- ✅ `src/pages/catalogo.js` - Ya tenía límite 5000 (OK)
+- ✅ `src/utils/dataHelpers.js` - Límite 500 para destacados (OK, es intencional)
+
+Ahora la tienda carga todos los productos disponibles.
+
+---
+
+**Problema 2**: Errores 404 en fuentes Inter-Regular.woff2, Inter-Bold.woff2, Inter-SemiBold.woff2
+
+**Causa**: El navegador puede estar cacheando CSS viejo que buscaba archivos de fuentes locales.
+
+**Solución**:
+1. ✅ Fuentes ya están configuradas correctamente desde Google Fonts
+2. ✅ Preconnect para fonts.googleapis.com y fonts.gstatic.com ya configurado
+3. 🔄 **Hacer hard refresh** después del deploy: `Ctrl + Shift + R` (Windows/Linux) o `Cmd + Shift + R` (Mac)
+
+Si persisten los errores 404 después del hard refresh:
+- Abrir DevTools → Application → Clear Storage → Clear site data
+- Cerrar y reabrir el navegador
+
+---
+
 ## v2.0.2 - Fix CORS de Google Fonts (16/02/2026)
 
 ### 🐛 Bug Fix
