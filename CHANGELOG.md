@@ -1,5 +1,27 @@
 # CHANGELOG - TovalTech Refactor
 
+## v2.0.2 - Fix CORS de Google Fonts (16/02/2026)
+
+### 🐛 Bug Fix
+
+**Problema**: Error de CORS al cargar la fuente Clash Display desde Fontshare.
+
+```
+Access-Control-Allow-Origin header not matching origin
+https://api.fontshare.com/v2/css?f[]=clash-display@400,700
+```
+
+**Solución**: Reemplazar Clash Display por **Manrope** (Google Fonts).
+
+**Cambios**:
+- ✅ Removido import de Fontshare que causaba CORS
+- ✅ Agregado Manrope a Google Fonts import
+- ✅ Reemplazadas todas las referencias en CSS (global.css, home.css, store.css)
+
+Manrope es una fuente geométrica moderna muy similar a Clash Display, pero sin problemas de CORS.
+
+---
+
 ## v2.0.1 - Fix NewBytes Provider (16/02/2026)
 
 ### 🐛 Bug Fixes

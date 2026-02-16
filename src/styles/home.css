@@ -134,7 +134,7 @@
   letter-spacing: -0.03em;
   color: var(--text);
   margin: 0 0 24px;
-  font-family: 'Clash Display', var(--font-sans);
+  font-family: 'Manrope', var(--font-sans);
 }
 
 .heroAccent {
@@ -202,7 +202,7 @@
   letter-spacing: -0.02em;
   color: var(--text);
   margin: 0 0 12px;
-  font-family: 'Clash Display', var(--font-sans);
+  font-family: 'Manrope', var(--font-sans);
 }
 
 .sectionSubtitle {
