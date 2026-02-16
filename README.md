@@ -1,252 +1,269 @@
-# 🚀 TovalTech Web - Version MEGA
+# TovalTech - E-commerce Refactored
 
-**Versión Completa con NewBytes, ELIT, Carrito, y más**
+Versión refactorizada del proyecto TovalTech con separación de vistas cliente/admin, nuevo home profesional, filtros mejorados y diseño moderno.
 
----
+## ✨ Cambios Principales
 
-## 🎯 NUEVAS FUNCIONALIDADES
+### 1. **Nuevo Home E-commerce**
+- Hero simple con propuesta de valor clara
+- Grid de categorías clickeables (6 categorías principales)
+- Productos destacados (grid de 6-8 productos)
+- Sección de marcas con scroll animado
+- Bloques "¿Qué hacemos?" (Cotizaciones, Abastecimiento, Soporte)
+- Diseño responsive y profesional
 
-### ✅ Importación NewBytes
-- **Ubicación:** `/api/functions/providersNewBytesImport.js`
-- **Endpoint:** `POST /api/providersNewBytesImport`
-- **Token configurado** en variables de entorno
+### 2. **Separación de Vistas Cliente/Admin**
+**Vista Pública** (sin login):
+- Home
+- Tienda (precios con IVA incluido, filtros simplificados)
+- Contacto
 
-### ✅ Carrito de Cotización
-- **Ubicación:** `/src/pages/carrito.js` + `/src/components/cart.js`
-- Múltiples listas de productos
-- Compartir por WhatsApp
-- Cálculo automático con IVA + margen
-- Exportar a PDF (próximamente)
+**Vista Cliente** (login customer):
+- Todo lo anterior +
+- Carrito
+- Mis pedidos
 
-### ✅ Limpieza de Duplicados
-- **Script:** `/api/scripts/cleanDuplicates.js`
-- Elimina productos duplicados por nombre
-- Mantiene el más reciente de cada grupo
+**Vista Admin** (login admin):
+- Todo lo anterior +
+- Catálogo completo (con filtros avanzados)
+- Proveedores
+- Configuración
+- Jeffrey (asistente admin)
 
-### ✅ Assets Mejorados
-- Logos SVG temporales en `/assets/`
-- Favicon incluido
-- Fallback automático a texto si falla imagen
+### 3. **Filtros Sin Scroll Horizontal**
+**Clientes**:
+- Buscar
+- Categoría + Subcategoría (select único)
+- Marca
+- Precio min/max (con pills predefinidas)
+- Solo con stock (checkbox)
+- IVA incluido (siempre ON)
+- Toggle USD/ARS
 
----
+**Admin** (adicional):
+- Proveedor
+- FX USD→ARS manual
+- Toggle IVA incluido/excluido
 
-## 📦 INSTALACIÓN RÁPIDA
+### 4. **Componentes Reutilizables**
+- `ProductCard` único para tienda y catálogo
+- `FilterSidebar` reutilizable con modo cliente/admin
+- Helpers de datos centralizados
 
-### 1. Configurar Variables de Entorno
+### 5. **Diseño Moderno**
+- Tipografía distintiva (Clash Display + Inter + JetBrains Mono)
+- Paleta de colores tech (dark/light themes)
+- Animaciones sutiles y transiciones suaves
+- Mobile-first responsive
 
-**Azure Portal → tovaltech-web → Configuración → Variables de aplicación:**
+## 🚀 Deploy Instructions
 
-```
-STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=...
-JWT_SECRET=tu-secreto-super-largo-y-aleatorio
-CHAT_TABLE_NAME=chatlog
-PRODUCTS_TABLE_NAME=Products
-PROVIDERS_TABLE_NAME=Providers
-USERS_TABLE_NAME=Users
-ELIT_USER_ID=29574
-ELIT_TOKEN=tu-token-elit
-NEWBYTES_TOKEN=c6caafe18ab17302a736431e21c9b5
-```
-
-### 2. Subir al Repositorio
+### Opción 1: Deploy Directo a GitHub
 
 ```bash
-# Clonar tu repo
-git clone https://github.com/ValeenMar/tovaltech-web.git
-cd tovaltech-web
+# 1. Descomprimir el .zip
+unzip tovaltech-refactored.zip
+cd tovaltech-refactored
 
-# Reemplazar con este contenido
-# (o descomprimir el ZIP directamente en la carpeta)
-
-# Commitear
+# 2. Inicializar git (si es nuevo repo)
+git init
 git add .
-git commit -m "feat: version mega con newbytes, carrito y más"
-git push origin main
+git commit -m "Refactor complete: new home, client/admin separation, improved filters"
+
+# 3. Push a tu repo
+git remote add origin <tu-repo-url>
+git push -u origin main
 ```
 
-### 3. Deploy Automático
+### Opción 2: Deploy a Azure Static Web Apps
 
-Azure Static Web Apps detectará el push y hará deploy automático.
+1. Ir a Azure Portal
+2. Crear nuevo "Static Web App"
+3. Conectar con tu repo de GitHub
+4. Configurar build:
+   - **App location**: `/`
+   - **API location**: `/api`
+   - **Output location**: `/`
 
----
-
-## 🔧 SCRIPTS ÚTILES
-
-### Importar Productos de NewBytes
+### Opción 3: Deploy Local (Testing)
 
 ```bash
-# Llamar al endpoint
-curl -X POST https://tu-sitio.azurestaticapps.net/api/providersNewBytesImport
+# Instalar http-server globalmente
+npm install -g http-server
+
+# Ejecutar servidor local
+http-server . -p 3000
+
+# Abrir http://localhost:3000
 ```
 
-### Limpiar Duplicados
-
-```bash
-cd api/scripts
-node cleanDuplicates.js
-```
-
----
-
-## 📁 ESTRUCTURA DEL PROYECTO
+## 📁 Estructura del Proyecto
 
 ```
-/
-├── api/                          # Azure Functions
-│   ├── functions/
-│   │   ├── providersNewBytesImport.js   # NUEVO
-│   │   ├── getProducts.js
-│   │   └── ...
-│   ├── lib/
-│   │   └── auth.js              # Auth centralizado
-│   ├── scripts/
-│   │   └── cleanDuplicates.js    # NUEVO
-│   └── .env.example              # Template de config
+tovaltech-refactored/
+├── index.html              # Punto de entrada
+├── README.md               # Este archivo
+├── package.json            # Dependencias (si las hay)
 │
 ├── src/
+│   ├── main.js             # Router con separación cliente/admin
+│   │
 │   ├── pages/
-│   │   ├── carrito.js            # NUEVO - Carrito de cotización
-│   │   ├── tienda.js
-│   │   └── catalogo.js
+│   │   ├── home.js         # Home e-commerce
+│   │   ├── tienda.js       # Tienda (cliente)
+│   │   └── catalogo.js     # Catálogo (admin)
+│   │
 │   ├── components/
-│   │   ├── cart.js               # NUEVO - Lógica del carrito
-│   │   ├── cards.js
-│   │   └── table.js
+│   │   ├── ProductCard.js      # Tarjeta de producto reutilizable
+│   │   └── FilterSidebar.js    # Sidebar de filtros reutilizable
+│   │
+│   ├── utils/
+│   │   └── dataHelpers.js      # Helpers para productos, FX, precios
+│   │
 │   └── styles/
-│       └── global.css
+│       ├── global.css      # Estilos globales y variables
+│       ├── home.css        # Estilos del home
+│       └── store.css       # Estilos tienda/catálogo
 │
-├── assets/                       # NUEVO
-│   ├── tovaltech.svg
-│   ├── favicon.svg
-│   └── preview.html
-│
-└── index.html
+└── api/                    # Azure Functions (backend existente)
+    └── functions/
+        ├── getProducts/
+        ├── getProviders/
+        ├── login/
+        └── ...
 ```
 
----
+## 🔧 Configuración
 
-## 🛠️ USO DEL CARRITO
+### Variables de Entorno (Backend)
 
-### Agregar al Carrito (desde tienda/catálogo)
+Asegurarse de tener configuradas en Azure:
 
-```javascript
-import { addToCart } from "../components/cart.js";
-
-// En el click de un producto
-addToCart(producto);
+```
+AZURE_STORAGE_CONNECTION_STRING=<tu-connection-string>
+JWT_SECRET=<tu-secret>
 ```
 
-### Ver el Carrito
+### LocalStorage (Frontend)
 
-Navegar a `/carrito` en el sitio.
+El frontend usa localStorage para:
+- `toval_theme`: tema dark/light
+- `toval_token`: JWT de autenticación
+- `toval_cart`: carrito de compras
+- `toval_margin_pct`: margen de ganancia (admin)
 
-### Compartir por WhatsApp
+## 🎨 Personalización
 
-El botón genera un mensaje automático con todos los productos y el total.
-
----
-
-## 🔐 SEGURIDAD
-
-### ⚠️ IMPORTANTE: NO HAY .env EN EL REPO
-
-Este proyecto NO incluye archivos `.env` con credenciales reales.
-
-**Todas las variables sensibles deben configurarse en:**
-- Azure Portal → Configuración de la aplicación
-- O en tu `.env` local (nunca commitear)
-
----
-
-## 📊 API ENDPOINTS
-
-### Productos
-
-- `GET /api/getProducts` - Lista productos
-- `GET /api/getProducts?provider=elit` - Filtrar por proveedor
-- `GET /api/getProducts?q=ssd` - Buscar productos
-
-### Importación
-
-- `POST /api/providersElitImport` - Importar de ELIT
-- `POST /api/providersNewBytesImport` - Importar de NewBytes
-
-### Proveedores
-
-- `GET /api/getProviders` - Lista proveedores
-
----
-
-## 🎨 PERSONALIZACIÓN
-
-### Cambiar Logos
-
-1. Reemplazar `/assets/tovaltech.svg` con tu logo
-2. Convertir a PNG si querés: https://www.svgtopng.com/
-3. Actualizar `/assets/favicon.svg` y generar .ico en https://favicon.io
-
-### Ajustar Colores
+### Colores
 
 Editar variables CSS en `/src/styles/global.css`:
 
 ```css
 :root {
-  --color-primary: #3b82f6;
-  --color-secondary: #8b5cf6;
-  /* ... */
+  --accent: #00e5ff;        /* Color principal */
+  --accent2: rgba(0, 229, 255, 0.12);  /* Acento suave */
+  /* ... más variables */
 }
 ```
 
----
+### Categorías del Home
 
-## 🐛 TROUBLESHOOTING
+Editar array en `/src/pages/home.js`:
 
-### "No se importan productos de NewBytes"
-
-1. Verificar que `NEWBYTES_TOKEN` esté configurado en Azure
-2. Probar el endpoint manualmente con curl
-3. Ver logs en Azure Portal → Functions → Monitor
-
-### "Productos duplicados"
-
-Ejecutar script de limpieza:
-```bash
-cd api/scripts
-STORAGE_CONNECTION_STRING="..." node cleanDuplicates.js
+```javascript
+const CATEGORIES = [
+  {
+    id: 'monitores',
+    name: 'Monitores',
+    icon: '🖥️',
+    description: 'Pantallas LED, IPS, QHD, 4K'
+  },
+  // ... más categorías
+];
 ```
 
-### "El logo no aparece"
+### Marcas
 
-El sitio usa fallback automático. Si falla la imagen, muestra "TovalTech" en texto.
+Editar array en `/src/pages/home.js` (sección "Brands"):
+
+```javascript
+['DELL EMC', 'LENOVO', 'CISCO', ...]
+```
+
+## 📱 Mobile
+
+Todo el diseño es **mobile-first**:
+- Filtros en drawer lateral (overlay en mobile)
+- Grid adaptativo de productos
+- Header colapsable
+- Botones y controles touch-friendly
+
+## 🔐 Autenticación
+
+El router verifica roles automáticamente:
+- Rutas públicas: acceso libre
+- Rutas cliente: requiere login (customer o admin)
+- Rutas admin: solo admin
+
+```javascript
+// En main.js
+const ADMIN_ROUTES = ['/catalogo', '/proveedores', '/configuracion'];
+```
+
+## 🐛 Troubleshooting
+
+### "Productos no cargan"
+- Verificar que el backend esté corriendo
+- Revisar network tab para errores de API
+- Verificar conexión a Azure Table Storage
+
+### "Filtros no funcionan"
+- Limpiar localStorage
+- Revisar console para errores JS
+- Verificar estructura de datos de productos
+
+### "Login no funciona"
+- Verificar JWT_SECRET en backend
+- Revisar que /api/login esté disponible
+- Limpiar localStorage y volver a intentar
+
+## 📝 Notas Importantes
+
+1. **Productos Destacados**: Se seleccionan por `updatedAt` (más nuevos primero). Filtrados para excluir `stock === 0`.
+
+2. **Precios**: 
+   - **Clientes**: Siempre con IVA incluido
+   - **Admin**: Toggle para ver con/sin IVA
+
+3. **FX USD→ARS**:
+   - **Clientes**: Automático desde API `/api/dollar-rate`
+   - **Admin**: Puede forzar FX manual en filtros
+
+4. **Margen**: Solo admin puede ajustar margen de ganancia (toolbar catálogo)
+
+## ✅ Checklist de Deploy
+
+- [ ] Descomprimir y revisar archivos
+- [ ] Actualizar URLs de API si cambiaron
+- [ ] Configurar variables de entorno en Azure
+- [ ] Push a GitHub
+- [ ] Conectar con Azure Static Web Apps
+- [ ] Verificar que backend responda
+- [ ] Testear login admin/cliente
+- [ ] Testear filtros en mobile
+- [ ] Verificar que home se vea correctamente
+
+## 🎯 Próximos Pasos (Opcional)
+
+- [ ] Implementar búsqueda avanzada con Algolia
+- [ ] Agregar página de producto individual
+- [ ] Implementar checkout completo
+- [ ] Dashboard de admin con analytics
+- [ ] Sistema de notificaciones
+- [ ] Integración con MercadoPago
 
 ---
 
-## 📞 CONTACTO
-
-**TovalTech**
-- Email: valentin@toval-tech.com
-- Tel: +54 9 11 6883-1802
-
----
-
-## 📝 CHANGELOG
-
-### Version MEGA (2026-02-15)
-
-**Nuevas Features:**
-- ✅ Importación automática de NewBytes
-- ✅ Carrito de cotización con WhatsApp
-- ✅ Script de limpieza de duplicados
-- ✅ Assets (logos + favicon)
-- ✅ Auth centralizado en `/api/lib/auth.js`
-- ✅ .env.example completo
-- ✅ Sin archivos sensibles en el repo
-
-**Mejoras:**
-- Refactorización de autenticación
-- Mejor manejo de errores
-- Documentación completa
-
----
-
-🚀 **¡Todo listo para producción!**
+**Desarrollado por:** Refactor completo del proyecto original TovalTech  
+**Versión:** 2.0.0  
+**Fecha:** Febrero 2026

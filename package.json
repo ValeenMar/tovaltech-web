@@ -1,0 +1,22 @@
+{
+  "name": "tovaltech-refactored",
+  "version": "2.0.0",
+  "description": "TovalTech E-commerce - Refactored with client/admin separation and modern design",
+  "main": "index.html",
+  "scripts": {
+    "dev": "http-server . -p 3000 -o",
+    "build": "echo 'No build step required for vanilla JS'",
+    "deploy": "echo 'Deploy to Azure Static Web Apps via GitHub'"
+  },
+  "keywords": [
+    "e-commerce",
+    "tech",
+    "hardware",
+    "azure"
+  ],
+  "author": "TovalTech",
+  "license": "MIT",
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}
