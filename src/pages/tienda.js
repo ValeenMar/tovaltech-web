@@ -754,6 +754,11 @@ export function wireTienda(rootOrQuery, maybeQuery = "") {
   const prevBtn = root.querySelector("#prevPage");
   const nextBtn = root.querySelector("#nextPage");
 
+  // Paginación inferior (misma lógica que arriba)
+  const pagerNumsBottom = root.querySelector("#pagerNumsBottom");
+  const prevBtnBottom = root.querySelector("#prevPageBottom");
+  const nextBtnBottom = root.querySelector("#nextPageBottom");
+
   const modal = root.querySelector("#tiendaModal");
   const modalBody = root.querySelector("#tiendaModalBody");
 
