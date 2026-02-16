@@ -210,7 +210,7 @@ function renderFilterSidebar() {
   // Extraer listas únicas
   const brands = [...new Set(allProducts.map(p => p.brand).filter(Boolean))].sort();
   const categories = [...new Set(allProducts.map(p => p.category).filter(Boolean))].sort();
-  const providers = [...new Set(allProducts.map(p => p.provider).filter(Boolean))].sort();
+  const providers = [...new Set(allProducts.map(p => p.provider || p.providerId).filter(Boolean))].sort();
   
   container.innerHTML = FilterSidebar({
     mode: 'admin',
@@ -267,8 +267,11 @@ function applyFilters() {
     }
     
     // Provider
-    if (currentFilters.provider && p.provider !== currentFilters.provider) {
-      return false;
+    if (currentFilters.provider) {
+      const prov = (p.provider || p.providerId || '').toLowerCase();
+      if (prov !== currentFilters.provider.toLowerCase()) {
+        return false;
+      }
     }
     
     // Price range

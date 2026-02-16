@@ -68,6 +68,7 @@ function enrichProduct(p, fx = 1420, margin = 15) {
   
   return {
     ...p,
+    provider: p.providerId || p.provider || null, // Normalizar campo
     finalPrice: Math.round(finalPrice),
     basePriceUsd: base,
     ivaRate: iva,

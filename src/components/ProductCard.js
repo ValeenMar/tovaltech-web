@@ -47,13 +47,13 @@ export function ProductCard(product, options = {}) {
         
         ${product.brand ? `<p class="productBrand">${esc(product.brand)}</p>` : ''}
         
-        ${mode === 'admin' && product.provider 
+        ${mode === 'admin' && (product.provider || product.providerId)
           ? `<p class="productProvider">
                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
                  <circle cx="12" cy="7" r="4"/>
                </svg>
-               ${esc(product.provider)}
+               ${esc(product.provider || product.providerId)}
              </p>`
           : ''
         }
