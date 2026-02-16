@@ -42,6 +42,19 @@ function toNumber(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+async function fetchJsonWithTimeout(url, { timeoutMs = 3500, fetchOpts = {} } = {}) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...fetchOpts, signal: controller.signal });
+    const data = await res.json().catch(() => null);
+    return { res, data };
+  } finally {
+    clearTimeout(id);
+  }
+}
+
+
 function clamp(n, a, b) {
   return Math.min(b, Math.max(a, n));
 }
@@ -92,8 +105,7 @@ function getFxMetaText() {
 
 async function refreshFxUsdArs() {
   try {
-    const res = await fetch("/api/dollar-rate", { method: "GET", cache: "no-store" });
-    const data = await res.json().catch(() => null);
+    const { res, data } = await fetchJsonWithTimeout("/api/dollar-rate", { timeoutMs: 3500, fetchOpts: { method: "GET", cache: "no-store" } });
     if (!res.ok || !data) throw new Error("Bad /api/dollar-rate response");
 
     const venta = typeof data.venta === "number" ? data.venta : Number(data.venta);
@@ -111,6 +123,23 @@ async function refreshFxUsdArs() {
     return { ok: false, error: String(err?.message || err) };
   }
 }
+
+function updateFxUi() {
+  const fxText = document.getElementById("fxUsdArsText");
+  const fxMeta = document.getElementById("fxMeta");
+  const fx = getFxUsdArs();
+  fxText.textContent = fx ? `ARS ${Math.round(fx).toLocaleString("es-AR")}` : "ARS -";
+  if (!FX_META || (!FX_META.fuente && !FX_META.nombre && !FX_META.fechaActualizacion)) {
+    fxMeta.textContent = "";
+    return;
+  }
+  const parts = [];
+  if (FX_META.nombre) parts.push(esc(FX_META.nombre));
+  if (FX_META.fuente) parts.push(`• ${esc(FX_META.fuente)}`);
+  if (FX_META.fechaActualizacion) parts.push(`• ${esc(FX_META.fechaActualizacion)}`);
+  fxMeta.textContent = parts.join(" ");
+}
+
 
 
 function getMarginPct() {
@@ -514,6 +543,7 @@ function renderPager({ totalItems, page, pageSize, root }) {
 export function TiendaPage() {
   return `
   <section class="page tiendaPage">
+    <div class="pageShell">
     <div class="tiendaHeader">
       <div class="pageTitleBlock">
         <h1 class="catalogoTitle">Tienda</h1>
@@ -681,6 +711,7 @@ export function TiendaPage() {
         <button class="ttModalClose" data-tt="modal-close" aria-label="Cerrar">✕</button>
         <div id="tiendaModalBody"></div>
       </div>
+    </div>
     </div>
   </section>
   `;
@@ -963,7 +994,7 @@ export function wireTienda(rootOrQuery, maybeQuery = "") {
 
   async function bootstrap() {
     // FX USD→ARS desde API
-    await refreshFxUsdArs();
+    refreshFxUsdArs().then(() => updateFxUi()).catch(() => updateFxUi());
     const fx = getFxUsdArs();
     if (fxText) fxText.textContent = fx ? `ARS ${fx.toLocaleString("es-AR")}` : "ARS -";
     const meta = getFxMetaText();
@@ -1035,7 +1066,7 @@ export function wireTienda(rootOrQuery, maybeQuery = "") {
   // refresco FX cada 5 min
   setInterval(async () => {
     const prev = getFxUsdArs();
-    await refreshFxUsdArs();
+    refreshFxUsdArs().then(() => updateFxUi()).catch(() => updateFxUi());
     const next = getFxUsdArs();
 
     if (fxText) fxText.textContent = next ? `ARS ${next.toLocaleString("es-AR")}` : "ARS -";

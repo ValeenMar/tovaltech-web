@@ -375,6 +375,7 @@ function renderPager({ totalItems, page, pageSize, root }) {
 export function CatalogoPage() {
   return `
   <section class="page catalogoPage">
+    <div class="pageShell">
     <div class="catalogHeader">
       <h1 class="catalogoTitle">Catálogo</h1>
       <div class="muted" id="catSource">Datos: ${dataSource}</div>
@@ -536,6 +537,7 @@ export function CatalogoPage() {
         <button class="ttModalClose" data-tt="modal-close" aria-label="Cerrar">✕</button>
         <div id="ttModalBody"></div>
       </div>
+    </div>
     </div>
   </section>
   `;

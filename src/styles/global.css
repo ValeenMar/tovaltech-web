@@ -95,13 +95,22 @@ a:hover {
   margin: 0 auto;
   padding-top: 18px;
   padding-bottom: 18px;
-  padding-left: clamp(14px, 2.2vw, 34px);
-  padding-right: clamp(14px, 2.2vw, 34px);
+  padding-left: clamp(10px, 1.6vw, 22px);
+  padding-right: clamp(10px, 1.6vw, 22px);
 }
 
 .main {
   padding-top: 26px;
   min-height: calc(100vh - 200px);
+}
+
+/* Shell ancho para evitar "ultrawide descentrado" pero sin sentirse en caja */
+.pageShell{
+  width: 100%;
+  max-width: 1760px;
+  margin: 0 auto;
+  padding-left: clamp(12px, 2vw, 28px);
+  padding-right: clamp(12px, 2vw, 28px);
 }
 
 /* ========================================
@@ -554,9 +563,23 @@ input[type="checkbox"] {
    ======================================== */
 .productsGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 22px;
   margin-top: 18px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+/* Nunca más de 5 por fila; baja progresivamente según ancho */
+@media (max-width: 1640px){
+  .productsGrid{ grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 1280px){
+  .productsGrid{ grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 980px){
+  .productsGrid{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px){
+  .productsGrid{ grid-template-columns: repeat(1, minmax(0, 1fr)); }
 }
 
 .pCard {
@@ -1148,6 +1171,7 @@ input.compact, select.compact {
 
 /* Píldora de tipo de cambio */
 .fxPill {
+  max-width: 260px;
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -1720,8 +1744,8 @@ input.compact, select.compact {
   margin: 0 auto;
   padding-top: 60px;
   padding-bottom: 30px;
-  padding-left: clamp(14px, 2.2vw, 34px);
-  padding-right: clamp(14px, 2.2vw, 34px);
+  padding-left: clamp(10px, 1.6vw, 22px);
+  padding-right: clamp(10px, 1.6vw, 22px);
 }
 
 .footerNewsletter {
@@ -2019,9 +2043,25 @@ input.compact, select.compact {
   /* sidebar ahora es drawer (ver arriba) */
   
   .productsGrid {
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 12px;
-  }
+  display: grid;
+  gap: 22px;
+  margin-top: 18px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+/* Nunca más de 5 por fila; baja progresivamente según ancho */
+@media (max-width: 1640px){
+  .productsGrid{ grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 1280px){
+  .productsGrid{ grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 980px){
+  .productsGrid{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px){
+  .productsGrid{ grid-template-columns: repeat(1, minmax(0, 1fr)); }
+}
   
   .pCard {
     border-radius: 16px;
@@ -2084,3 +2124,5 @@ html {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+#marginPct{ max-width: 140px; }
