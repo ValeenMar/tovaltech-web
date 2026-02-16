@@ -1,92 +1,41 @@
 // File: /api/functions/dollarRate.js
-// Dólar USD/ARS: solo desde DolarAPI. El front ya no permite editar el FX.
+// GET /api/dollar-rate
+// Fuente única: https://dolarapi.com/v1/dolares/oficial
+
 const { app } = require("@azure/functions");
 
-// Docs Argentina:
-// - GET https://dolarapi.com/v1/dolares/oficial  (schema compra/venta/casa/nombre/moneda/fechaActualizacion)
-// - GET https://dolarapi.com/v1/dolares          (lista de casas)
-// - GET https://dolarapi.com/v1/ambito/dolares/oficial (fuente Ámbito)
-const DOLARAPI_OFICIAL_URL =
-  process.env.DOLARAPI_OFICIAL_URL || "https://dolarapi.com/v1/dolares/oficial";
-const DOLARAPI_DOLARES_URL =
-  process.env.DOLARAPI_DOLARES_URL || "https://dolarapi.com/v1/dolares";
-const DOLARAPI_AMBITO_OFICIAL_URL =
-  process.env.DOLARAPI_AMBITO_OFICIAL_URL || "https://dolarapi.com/v1/ambito/dolares/oficial";
+const DOLARAPI_URL = "https://dolarapi.com/v1/dolares/oficial";
+const TTL_MS = 5 * 60 * 1000; // 5 min
 
-let LAST_OK = null;
+let cache = null; // { payload, fetchedAt }
 
-function toNum(v) {
+function toNumber(v) {
   const n = typeof v === "number" ? v : Number(String(v).replace(",", "."));
   return Number.isFinite(n) ? n : null;
 }
 
-async function fetchWithTimeout(url, { timeoutMs = 6000, headers = {} } = {}) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { headers, signal: ctrl.signal });
-    return res;
-  } finally {
-    clearTimeout(t);
-  }
-}
+async function fetchOficial() {
+  const res = await fetch(DOLARAPI_URL, {
+    method: "GET",
+    headers: { accept: "application/json" },
+  });
 
-function normalizeRate(data, { fuente = "DolarAPI" } = {}) {
-  const compra = toNum(data?.compra);
-  const venta = toNum(data?.venta);
-  if (!compra || !venta) return null;
+  if (!res.ok) throw new Error(`DolarAPI HTTP ${res.status}`);
+
+  const data = await res.json();
+  const compra = toNumber(data?.compra);
+  const venta = toNumber(data?.venta);
+
+  if (!venta || venta <= 0) throw new Error("DolarAPI: 'venta' inválida");
 
   return {
-    ok: true,
-    compra,
+    compra: compra ?? null,
     venta,
-    casa: data.casa || "oficial",
-    nombre: data.nombre || "Dólar Oficial",
-    moneda: data.moneda || "USD",
-    fechaActualizacion: data.fechaActualizacion || new Date().toISOString(),
-    fuente,
+    casa: data?.casa ?? null,
+    nombre: data?.nombre ?? null,
+    moneda: data?.moneda ?? "USD",
+    fechaActualizacion: data?.fechaActualizacion ?? null,
   };
-}
-
-async function fetchJson(url) {
-  const res = await fetchWithTimeout(url, {
-    timeoutMs: 6000,
-    headers: { "user-agent": "tovaltech-web/1.0" },
-  });
-  if (!res.ok) throw new Error(`${url} -> ${res.status}`);
-  const data = await res.json().catch(() => null);
-  if (!data) throw new Error(`${url} -> invalid JSON`);
-  return data;
-}
-
-async function fetchDollarOficialFromDolarApi() {
-  // 1) Oficial (primario)
-  try {
-    const data = await fetchJson(DOLARAPI_OFICIAL_URL);
-    const r = normalizeRate(data, { fuente: "DolarAPI" });
-    if (r) return r;
-  } catch (_) {}
-
-  // 2) Lista de dólares (backup)
-  try {
-    const data = await fetchJson(DOLARAPI_DOLARES_URL);
-    if (Array.isArray(data)) {
-      const found =
-        data.find((x) => String(x?.casa || "").toLowerCase() === "oficial") ||
-        data.find((x) => String(x?.nombre || "").toLowerCase().includes("oficial"));
-      const r = normalizeRate(found, { fuente: "DolarAPI" });
-      if (r) return r;
-    }
-  } catch (_) {}
-
-  // 3) Ámbito (último backup)
-  try {
-    const data = await fetchJson(DOLARAPI_AMBITO_OFICIAL_URL);
-    const r = normalizeRate(data, { fuente: "DolarAPI (Ámbito)" });
-    if (r) return r;
-  } catch (_) {}
-
-  throw new Error("No se pudo obtener FX desde DolarAPI");
 }
 
 app.http("dollarRate", {
@@ -95,57 +44,53 @@ app.http("dollarRate", {
   route: "dollar-rate",
   handler: async (_request, context) => {
     try {
-      const rate = await fetchDollarOficialFromDolarApi();
-      LAST_OK = { ...rate };
+      if (cache && Date.now() - cache.fetchedAt < TTL_MS) {
+        return {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+            "cache-control": "public, max-age=300",
+          },
+          jsonBody: { ok: true, fuente: DOLARAPI_URL, cached: true, ...cache.payload },
+        };
+      }
 
-      context.log(
-        `FX USD/ARS (${rate.nombre}) venta=${rate.venta} fecha=${rate.fechaActualizacion}`
-      );
+      const payload = await fetchOficial();
+      cache = { payload, fetchedAt: Date.now() };
+
+      context.log(`DolarAPI oficial venta: ${payload.venta}`);
 
       return {
         status: 200,
         headers: {
           "content-type": "application/json",
-          // Cache del lado del CDN/navegador por 5 min.
           "cache-control": "public, max-age=300",
         },
-        body: JSON.stringify(rate),
+        jsonBody: { ok: true, fuente: DOLARAPI_URL, cached: false, ...payload },
       };
     } catch (err) {
-      context.error("Dollar rate error:", err);
+      context.error("DollarRate error:", err);
 
-      // Si ya hubo un OK en esta instancia, devolvemos ese valor (stale=true)
-      if (LAST_OK && LAST_OK.venta) {
-        const stale = {
-          ...LAST_OK,
-          stale: true,
-          ok: true,
-          error: String(err?.message || err),
-        };
+      // Si hubo una cotización previa (sigue siendo API), devolvemos esa aunque esté vieja
+      if (cache?.payload?.venta) {
         return {
           status: 200,
           headers: { "content-type": "application/json", "cache-control": "no-store" },
-          body: JSON.stringify(stale),
+          jsonBody: {
+            ok: true,
+            fuente: DOLARAPI_URL,
+            cached: true,
+            stale: true,
+            error: String(err?.message || err),
+            ...cache.payload,
+          },
         };
       }
 
-      // Último fallback: respuesta válida pero sin FX.
-      const fallback = {
-        ok: false,
-        compra: 0,
-        venta: 0,
-        casa: "oficial",
-        nombre: "Dólar Oficial",
-        moneda: "USD",
-        fechaActualizacion: new Date().toISOString(),
-        fuente: "Fallback",
-        error: String(err?.message || err),
-      };
-
       return {
-        status: 200,
-        headers: { "content-type": "application/json", "cache-control": "no-store" },
-        body: JSON.stringify(fallback),
+        status: 502,
+        headers: { "content-type": "application/json" },
+        jsonBody: { ok: false, fuente: DOLARAPI_URL, error: String(err?.message || err) },
       };
     }
   },
