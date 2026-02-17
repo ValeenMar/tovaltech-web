@@ -12,13 +12,13 @@ const SALT_ROUNDS = 10;
 // Usuarios a migrar/crear
 const USERS_TO_MIGRATE = [
     {
-        email: "tu-email@toval-tech.com", // ⚠️ Cambiar por tu email real
+        email: "valentin@toval-tech.com", // ⚠️ Cambiar por tu email real
         password: "Milanesa", // ⚠️ Esta es la contraseña temporal
         name: "Admin Principal",
         role: "admin",
     },
     {
-        email: "socio-email@ejemplo.com", // ⚠️ Cambiar por email del socio
+        email: "tobias@toval-tech.com", // ⚠️ Cambiar por email del socio
         password: "Milanesa", // ⚠️ Contraseña temporal
         name: "Socio",
         role: "admin",
