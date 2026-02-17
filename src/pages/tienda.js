@@ -369,6 +369,7 @@ function handleAddToCart(sku) {
   }
 
   localStorage.setItem('toval_cart', JSON.stringify(cart));
+  window.dispatchEvent(new CustomEvent('cartUpdated'));
   showToast(`${product.name} agregado al carrito`);
   updateCartBadge();
 }

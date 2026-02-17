@@ -4,13 +4,33 @@
  * Permite guardar productos para consultar después
  */
 
-const CART_KEY = "tovaltech_cart";
+const CART_KEY = "toval_cart";
+const LEGACY_CART_KEY = "tovaltech_cart";
 const LISTS_KEY = "tovaltech_cart_lists";
 
 export function getCart() {
   try {
-    const data = localStorage.getItem(CART_KEY);
-    return data ? JSON.parse(data) : [];
+    const raw = localStorage.getItem(CART_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+      if (parsed && Array.isArray(parsed.items)) return parsed.items;
+    }
+
+    const legacy = localStorage.getItem(LEGACY_CART_KEY);
+    if (legacy) {
+      const parsedLegacy = JSON.parse(legacy);
+      if (Array.isArray(parsedLegacy)) {
+        localStorage.setItem(CART_KEY, JSON.stringify(parsedLegacy));
+        return parsedLegacy;
+      }
+      if (parsedLegacy && Array.isArray(parsedLegacy.items)) {
+        localStorage.setItem(CART_KEY, JSON.stringify(parsedLegacy.items));
+        return parsedLegacy.items;
+      }
+    }
+
+    return [];
   } catch {
     return [];
   }
@@ -18,6 +38,7 @@ export function getCart() {
 
 export function saveCart(items) {
   localStorage.setItem(CART_KEY, JSON.stringify(items));
+  localStorage.removeItem(LEGACY_CART_KEY);
   dispatchCartUpdate();
 }
 
@@ -100,7 +121,9 @@ export function deleteList(listId) {
 // Event system para actualizar UI
 function dispatchCartUpdate() {
   window.dispatchEvent(new CustomEvent("cartUpdated", {
-    detail: { count: getCart().length }
+    detail: {
+      count: getCart().reduce((sum, item) => sum + (item.quantity || 1), 0)
+    }
   }));
 }
 
@@ -161,7 +184,7 @@ export function generateWhatsAppMessage(cart, fx, margen) {
 
 // Renderizar badge del carrito
 export function renderCartBadge() {
-  const count = getCart().length;
+  const count = getCart().reduce((sum, item) => sum + (item.quantity || 1), 0);
   if (count === 0) return "";
   
   return `<span class="cartBadge">${count}</span>`;

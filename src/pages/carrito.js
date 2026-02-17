@@ -25,7 +25,7 @@ function formatMoney(amount) {
 }
 
 let fxUsdArs = null;
-let fxMetaText = "";
+const INTERNAL_MARGIN = 25;
 
 async function refreshFxUsdArs() {
   try {
@@ -37,12 +37,6 @@ async function refreshFxUsdArs() {
     if (!Number.isFinite(venta) || venta <= 0) throw new Error("Invalid venta");
 
     fxUsdArs = venta;
-
-    const fuente = data.fuente || "API";
-    const nombre = data.nombre || "Dólar Oficial";
-    const fecha = data.fechaActualizacion ? new Date(data.fechaActualizacion) : null;
-
-    fxMetaText = `${nombre} · ${fuente}` + (fecha ? ` · ${fecha.toLocaleString("es-AR")}` : "");
 
     return { ok: true, venta };
   } catch (err) {
@@ -61,13 +55,8 @@ export function CarritoPage() {
       <div class="carritoControls">
         <div class="cartSettings">
           <label>
-            <span>FX USD→ARS (API):</span>
+            <span>FX USD→ARS:</span>
             <input id="cartFx" class="input small" type="text" value="Cargando..." disabled />
-            <small id="cartFxMeta" class="muted"></small>
-          </label>
-          <label>
-            <span>Margen %:</span>
-            <input id="cartMargen" class="input small" type="number" value="25" min="0" max="100" step="1" />
           </label>
         </div>
         <button id="clearCart" class="btn btnDanger">Vaciar Carrito</button>
@@ -76,11 +65,11 @@ export function CarritoPage() {
       <div id="cartItems" class="cartItems"></div>
 
       <div id="cartSummary" class="cartSummary hidden">
-        <div class="cartTotal">
-          <h3>Total Estimado</h3>
-          <div class="totalAmount" id="totalAmount">-</div>
-          <p class="muted">Incluye IVA y margen</p>
-        </div>
+          <div class="cartTotal">
+            <h3>Total Estimado</h3>
+            <div class="totalAmount" id="totalAmount">-</div>
+            <p class="muted">Incluye IVA</p>
+          </div>
         <div class="cartActions">
           <button id="shareWhatsApp" class="btn btnPrimary btnLarge">
             <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
@@ -108,8 +97,6 @@ export function wireCarrito() {
   const empty = document.querySelector("#emptyCart");
   const totalEl = document.querySelector("#totalAmount");
   const fxInput = document.querySelector("#cartFx");
-  const fxMetaEl = document.querySelector("#cartFxMeta");
-  const margenInput = document.querySelector("#cartMargen");
   const clearBtn = document.querySelector("#clearCart");
   const whatsappBtn = document.querySelector("#shareWhatsApp");
   const pdfBtn = document.querySelector("#exportPDF");
@@ -118,14 +105,11 @@ export function wireCarrito() {
     if (fxInput) {
       fxInput.value = fxUsdArs ? String(fxUsdArs) : "No disponible";
     }
-    if (fxMetaEl) {
-      fxMetaEl.textContent = fxMetaText || "";
-    }
   }
 
   function render() {
     const cart = getCart();
-    const margen = Number(margenInput?.value) || 25;
+    const margen = INTERNAL_MARGIN;
 
     if (cart.length === 0) {
       itemsContainer.innerHTML = "";
@@ -231,8 +215,6 @@ export function wireCarrito() {
     }
   });
 
-  margenInput.addEventListener("input", render);
-
   clearBtn.addEventListener("click", () => {
     if (confirm("¿Vaciar el carrito?")) {
       clearCart();
@@ -242,7 +224,7 @@ export function wireCarrito() {
 
   whatsappBtn.addEventListener("click", () => {
     const cart = getCart();
-    const margen = Number(margenInput?.value) || 25;
+    const margen = INTERNAL_MARGIN;
 
     if (!fxUsdArs) {
       alert("No hay FX USD→ARS disponible. Probá de nuevo en unos segundos.");
@@ -250,8 +232,8 @@ export function wireCarrito() {
     }
 
     const message = generateWhatsAppMessage(cart, fxUsdArs, margen);
-    const tel = "5491168831802";
-    window.open(`https://wa.me/${tel}?text=${encodeURIComponent(message)}`, "_blank");
+    const tel = "5491123413674";
+    window.location.assign(`https://wa.me/${tel}?text=${encodeURIComponent(message)}`);
   });
 
   pdfBtn.addEventListener("click", () => {

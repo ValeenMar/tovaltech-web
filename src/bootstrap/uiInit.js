@@ -1,5 +1,9 @@
 // File: /src/bootstrap/uiInit.js
-// Inicializacion de UI global (tema, menu usuario, carrito)
+// Inicializacion de UI global (tema, menu usuario, carrito drawer)
+
+const CART_KEY = 'toval_cart';
+const LEGACY_CART_KEY = 'tovaltech_cart';
+const WHATSAPP_PHONE = '5491123413674';
 
 function esc(s) {
   return String(s ?? '')
@@ -10,20 +14,205 @@ function esc(s) {
     .replace(/'/g, '&#39;');
 }
 
-function updateCartBadge() {
+function readCartItems() {
   try {
-    const stored = localStorage.getItem('toval_cart');
-    const cart = stored ? JSON.parse(stored) : [];
-    const total = cart.reduce((sum, item) => sum + (item.quantity || 1), 0);
+    const raw = localStorage.getItem(CART_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+      if (parsed && Array.isArray(parsed.items)) return parsed.items;
+    }
 
-    const badge = document.querySelector('.cartBadge');
-    if (badge) {
-      badge.textContent = total;
-      badge.style.display = total > 0 ? 'flex' : 'none';
+    const legacy = localStorage.getItem(LEGACY_CART_KEY);
+    if (legacy) {
+      const parsedLegacy = JSON.parse(legacy);
+      if (Array.isArray(parsedLegacy)) {
+        localStorage.setItem(CART_KEY, JSON.stringify(parsedLegacy));
+        return parsedLegacy;
+      }
+      if (parsedLegacy && Array.isArray(parsedLegacy.items)) {
+        localStorage.setItem(CART_KEY, JSON.stringify(parsedLegacy.items));
+        return parsedLegacy.items;
+      }
     }
   } catch {
     // ignore
   }
+
+  return [];
+}
+
+function saveCartItems(items) {
+  localStorage.setItem(CART_KEY, JSON.stringify(items));
+  localStorage.removeItem(LEGACY_CART_KEY);
+  window.dispatchEvent(new CustomEvent('cartUpdated'));
+}
+
+function getCartCount() {
+  const cart = readCartItems();
+  return cart.reduce((sum, item) => sum + (item.quantity || 1), 0);
+}
+
+function updateCartBadge() {
+  const total = getCartCount();
+  const badge = document.querySelector('.cartBadge');
+  if (!badge) return;
+
+  badge.textContent = String(total);
+  badge.style.display = total > 0 ? 'flex' : 'none';
+}
+
+function formatMoney(amount) {
+  if (!Number.isFinite(amount)) return '-';
+  return new Intl.NumberFormat('es-AR', {
+    style: 'currency',
+    currency: 'ARS',
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
+function getItemFinalPrice(item) {
+  const direct = Number(item.finalPrice);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+
+  const base = Number(item.price);
+  if (!Number.isFinite(base) || base <= 0) return 0;
+
+  const ivaRate = Number(item.ivaRate);
+  const iva = Number.isFinite(ivaRate) ? ivaRate : 10.5;
+  const withIva = base * (1 + iva / 100);
+  return Math.round(withIva);
+}
+
+function buildWhatsAppMessage(cart) {
+  if (!cart.length) {
+    return encodeURIComponent('Hola! Quiero consultar por productos.');
+  }
+
+  let message = 'Hola! Quiero consultar por estos productos:\n\n';
+  let total = 0;
+
+  cart.forEach((item, idx) => {
+    const qty = item.quantity || 1;
+    const unit = getItemFinalPrice(item);
+    const subtotal = unit * qty;
+    total += subtotal;
+
+    message += `${idx + 1}. ${item.name || 'Producto'}\n`;
+    if (item.brand) message += `   Marca: ${item.brand}\n`;
+    message += `   SKU: ${item.sku || '-'}\n`;
+    message += `   Cantidad: ${qty}\n`;
+    message += `   Subtotal: ${formatMoney(subtotal)}\n\n`;
+  });
+
+  message += `Total estimado: ${formatMoney(total)}\n\n`;
+  message += 'Quedo atento a disponibilidad. Gracias!';
+
+  return encodeURIComponent(message);
+}
+
+function ensureCartDrawer() {
+  if (document.getElementById('cartDrawer')) return;
+
+  const host = document.createElement('div');
+  host.innerHTML = `
+    <div class="cartDrawerOverlay" id="cartDrawerOverlay" hidden></div>
+    <aside class="cartDrawer" id="cartDrawer" aria-hidden="true">
+      <div class="cartDrawerHeader">
+        <h3>Tu carrito</h3>
+        <button class="btn btnSecondary" id="cartDrawerClose" type="button">Cerrar</button>
+      </div>
+      <div class="cartDrawerBody" id="cartDrawerBody"></div>
+      <div class="cartDrawerFooter" id="cartDrawerFooter"></div>
+    </aside>
+  `;
+
+  document.body.appendChild(host);
+}
+
+function renderCartDrawer() {
+  const body = document.getElementById('cartDrawerBody');
+  const footer = document.getElementById('cartDrawerFooter');
+  if (!body || !footer) return;
+
+  const cart = readCartItems();
+  if (!cart.length) {
+    body.innerHTML = '<p class="muted">Tu carrito esta vacio.</p>';
+    footer.innerHTML = '<a href="/tienda" data-link class="btn btnPrimary" id="cartDrawerGoStore">Ir a tienda</a>';
+    return;
+  }
+
+  let total = 0;
+  body.innerHTML = cart.map((item, idx) => {
+    const qty = item.quantity || 1;
+    const unit = getItemFinalPrice(item);
+    const subtotal = unit * qty;
+    total += subtotal;
+
+    return `
+      <div class="cartDrawerItem" data-idx="${idx}">
+        <div class="cartDrawerItemMain">
+          <strong>${esc(item.name || 'Producto')}</strong>
+          <span class="muted">SKU: ${esc(item.sku || '-')}</span>
+          <span>${formatMoney(subtotal)}</span>
+        </div>
+        <div class="cartDrawerQty">
+          <button type="button" data-cart-action="dec" data-idx="${idx}">-</button>
+          <span>${qty}</span>
+          <button type="button" data-cart-action="inc" data-idx="${idx}">+</button>
+          <button type="button" data-cart-action="remove" data-idx="${idx}">Quitar</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  footer.innerHTML = `
+    <div class="cartDrawerTotal">
+      <span>Total</span>
+      <strong>${formatMoney(total)}</strong>
+    </div>
+    <button type="button" class="btn btnPrimary" id="cartDrawerWhatsApp">Consultar por WhatsApp</button>
+  `;
+}
+
+function openCartDrawer() {
+  ensureCartDrawer();
+  renderCartDrawer();
+
+  const drawer = document.getElementById('cartDrawer');
+  const overlay = document.getElementById('cartDrawerOverlay');
+  if (!drawer || !overlay) return;
+
+  overlay.hidden = false;
+  drawer.classList.add('open');
+  drawer.setAttribute('aria-hidden', 'false');
+}
+
+function closeCartDrawer() {
+  const drawer = document.getElementById('cartDrawer');
+  const overlay = document.getElementById('cartDrawerOverlay');
+  if (!drawer || !overlay) return;
+
+  drawer.classList.remove('open');
+  drawer.setAttribute('aria-hidden', 'true');
+  overlay.hidden = true;
+}
+
+function mutateCartItem(action, idx) {
+  const cart = readCartItems();
+  const item = cart[idx];
+  if (!item) return;
+
+  if (action === 'remove') {
+    cart.splice(idx, 1);
+  } else if (action === 'inc') {
+    item.quantity = (item.quantity || 1) + 1;
+  } else if (action === 'dec') {
+    item.quantity = Math.max(1, (item.quantity || 1) - 1);
+  }
+
+  saveCartItems(cart);
+  renderCartDrawer();
 }
 
 function logout() {
@@ -100,14 +289,53 @@ function initGlobalHandlers() {
     if (logoutBtn) {
       event.preventDefault();
       logout();
+      return;
     }
+
+    const cartOpen = event.target.closest('.cartIcon a, #cartOpenBtn');
+    if (cartOpen) {
+      event.preventDefault();
+      openCartDrawer();
+      return;
+    }
+
+    if (event.target.closest('#cartDrawerOverlay') || event.target.closest('#cartDrawerClose')) {
+      event.preventDefault();
+      closeCartDrawer();
+      return;
+    }
+
+    const actionBtn = event.target.closest('[data-cart-action]');
+    if (actionBtn) {
+      event.preventDefault();
+      const action = actionBtn.dataset.cartAction;
+      const idx = Number.parseInt(actionBtn.dataset.idx || '', 10);
+      if (!Number.isFinite(idx)) return;
+      mutateCartItem(action, idx);
+      return;
+    }
+
+    const waBtn = event.target.closest('#cartDrawerWhatsApp');
+    if (waBtn) {
+      event.preventDefault();
+      const message = buildWhatsAppMessage(readCartItems());
+      window.location.assign(`https://wa.me/${WHATSAPP_PHONE}?text=${message}`);
+      return;
+    }
+  });
+
+  window.addEventListener('cartUpdated', () => {
+    updateCartBadge();
+    renderCartDrawer();
   });
 }
 
 function initUiShell() {
   initThemeToggle();
   initGlobalHandlers();
+  ensureCartDrawer();
   updateCartBadge();
+  renderCartDrawer();
   updateUserMenu();
 }
 
