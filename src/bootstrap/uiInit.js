@@ -300,6 +300,7 @@ async function logout() {
     // ignore
   }
   localStorage.removeItem('tt_token');
+  localStorage.removeItem('tt_user');
   window.location.href = '/';
 }
 
@@ -324,6 +325,20 @@ async function updateUserMenu() {
     }
   } catch {
     // ignore
+  }
+
+  // Fallback: usar usuario guardado en localStorage
+  if (!displayName) {
+    try {
+      const raw = localStorage.getItem('tt_user');
+      if (raw) {
+        const cached = JSON.parse(raw);
+        displayName = cached.name || cached.email || null;
+        role = cached.role || null;
+      }
+    } catch {
+      // ignore
+    }
   }
 
   if (!displayName) {

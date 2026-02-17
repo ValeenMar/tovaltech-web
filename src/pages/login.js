@@ -88,8 +88,9 @@ export async function wireLogin() {
       }
 
       if (data.user) {
-        // Guardar token para requests posteriores (fallback al cookie HttpOnly)
+        // Guardar token y datos del usuario para evitar depender de /api/me en recarga
         saveAuthToken(data.token);
+        localStorage.setItem("tt_user", JSON.stringify(data.user));
         if (data.user.role === "admin") {
           window.location.href = "/catalogo";
         } else {
