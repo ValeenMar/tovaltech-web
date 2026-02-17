@@ -19,3 +19,6 @@ require("./functions/users");
 
 // FX USD→ARS (DolarAPI) - habilita GET /api/dollar-rate
 require("./functions/dollarRate");
+
+// Configuración global (margen, etc.) - GET/POST /api/settings
+require("./functions/settings");
