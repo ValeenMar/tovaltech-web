@@ -3,7 +3,7 @@
 
 import './bootstrap/uiInit.js';
 
-import { authFetch, clearAuthToken } from './utils/authHelper.js';
+import { authFetch, clearAuthToken, getCachedUser, setCachedUser } from './utils/authHelper.js';
 import { HomePage, wireHome } from './pages/home.js';
 import { TiendaPage, wireTienda } from './pages/tienda.js';
 import { CatalogoPage, wireCatalogo } from './pages/catalogo.js';
@@ -41,7 +41,7 @@ const routes = [
       } catch {
         // ignore
       }
-      clearAuthToken();
+      clearAuthToken(); // limpia tt_token y tt_user
       window.location.href = '/login';
     },
     auth: false,
@@ -112,11 +112,14 @@ async function router() {
   
   // Verificar permisos
   if (route.auth === 'admin' && !isAdmin()) {
-    redirectToLogin();
-    return;
+    // Solo redirigir si tampoco hay usuario cacheado
+    if (!getCachedUser()) {
+      redirectToLogin();
+      return;
+    }
   }
   
-  if (route.auth && !currentUser) {
+  if (route.auth && !currentUser && !getCachedUser()) {
     redirectToLogin();
     return;
   }
@@ -137,26 +140,31 @@ async function router() {
 async function loadCurrentUser() {
   try {
     const res = await authFetch('/api/me');
-    if (!res.ok) {
-      currentUser = null;
+    if (res.ok) {
+      const data = await res.json();
+      currentUser = data?.user || null;
+      setCachedUser(currentUser); // actualizar caché
       return;
     }
-
-    const data = await res.json();
-    currentUser = data?.user || null;
-    
   } catch (err) {
     console.error('Error loading user:', err);
-    currentUser = null;
   }
+
+  // Fallback: usar usuario cacheado en localStorage si /api/me falla
+  currentUser = getCachedUser();
 }
 
 function isAdmin() {
-  return currentUser && currentUser.role === 'admin';
+  if (currentUser) return currentUser.role === 'admin';
+  // Fallback a localStorage si /api/me falló
+  const cached = getCachedUser();
+  return cached && cached.role === 'admin';
 }
 
 function isCustomer() {
-  return currentUser && (currentUser.role === 'customer' || currentUser.role === 'admin');
+  if (currentUser) return currentUser.role === 'customer' || currentUser.role === 'admin';
+  const cached = getCachedUser();
+  return cached && (cached.role === 'customer' || cached.role === 'admin');
 }
 
 function redirectToLogin() {
