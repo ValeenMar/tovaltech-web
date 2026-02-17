@@ -327,6 +327,12 @@ code {
   gap: 16px;
 }
 
+.userMenu {
+  min-width: 140px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .themeToggle {
   width: 40px;
   height: 40px;
@@ -367,6 +373,15 @@ code {
   font-size: 11px;
   font-weight: 700;
   font-family: var(--font-mono);
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.cartBadge.isEmpty {
+  opacity: 0;
+  visibility: hidden;
+  transform: scale(0.9);
 }
 
 /* Mobile Menu */
@@ -1553,24 +1568,28 @@ code {
 }
 
 .itemsPerPageSelect {
-  padding: 8px 12px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  min-width: 170px;
+  padding: 10px 14px;
+  background: linear-gradient(180deg, var(--bg1) 0%, var(--bg0) 100%);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  border-radius: 10px;
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   cursor: pointer;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
 }
 
 .itemsPerPageSelect:hover {
   border-color: var(--primary);
+  transform: translateY(-1px);
 }
 
 .itemsPerPageSelect:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 .paginationControls {
@@ -1615,7 +1634,8 @@ code {
 .cartDrawerOverlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(4, 8, 12, 0.62);
+  backdrop-filter: blur(8px);
   z-index: 1200;
 }
 
@@ -1623,15 +1643,16 @@ code {
   position: fixed;
   top: 0;
   right: 0;
-  width: min(420px, 92vw);
+  width: min(560px, 96vw);
   height: 100vh;
-  background: var(--card-bg);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--card-bg) 96%, black) 0%, var(--card-bg) 100%);
   border-left: 1px solid var(--border);
   transform: translateX(100%);
-  transition: transform 0.25s ease;
+  transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
   z-index: 1210;
   display: grid;
   grid-template-rows: auto 1fr auto;
+  box-shadow: -24px 0 56px rgba(0, 0, 0, 0.42);
 }
 
 .cartDrawer.open {
@@ -1640,7 +1661,7 @@ code {
 
 .cartDrawerHeader,
 .cartDrawerFooter {
-  padding: 16px;
+  padding: 20px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -1651,21 +1672,33 @@ code {
 
 .cartDrawerBody {
   overflow: auto;
-  padding: 12px 16px;
+  padding: 16px 20px;
 }
 
 .cartDrawerItem {
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px;
-  margin-bottom: 10px;
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 12px;
   background: var(--bg0);
 }
 
 .cartDrawerItemMain {
   display: grid;
-  gap: 4px;
+  gap: 6px;
   margin-bottom: 8px;
+}
+
+.cartDrawerUsd {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.cartDrawerArs {
+  color: var(--accent);
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
 }
 
 .cartDrawerQty {
@@ -1674,19 +1707,52 @@ code {
   gap: 8px;
 }
 
-.cartDrawerQty button {
+.cartDrawerQtyBtn,
+.cartDrawerRemoveBtn,
+.cartDrawerCloseBtn {
   border: 1px solid var(--border);
   background: var(--panel);
   color: var(--text-primary);
-  border-radius: 8px;
-  padding: 4px 8px;
+  border-radius: 10px;
+  padding: 7px 12px;
+  font-weight: 600;
   cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.cartDrawerQtyBtn:hover,
+.cartDrawerRemoveBtn:hover,
+.cartDrawerCloseBtn:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
+}
+
+.cartDrawerQtyBtn:active,
+.cartDrawerRemoveBtn:active,
+.cartDrawerCloseBtn:active {
+  transform: scale(0.97);
+}
+
+.cartDrawerQtyValue {
+  min-width: 28px;
+  text-align: center;
+  font-weight: 700;
+}
+
+.cartDrawerRemoveBtn {
+  margin-left: auto;
 }
 
 .cartDrawerTotal {
   display: flex;
   justify-content: space-between;
   margin-bottom: 10px;
+}
+
+.cartDrawerWhatsAppBtn {
+  width: 100%;
+  justify-content: center;
 }
 
 /* Responsive */

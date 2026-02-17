@@ -158,7 +158,7 @@ export function wireCarrito() {
           <div class="cartItemActions">
             <div class="qtyControl">
               <button class="qtyBtn" data-action="decrease" data-idx="${idx}">-</button>
-              <input type="number" class="qtyInput" value="${qty}" min="1" data-idx="${idx}" />
+              <input type="number" class="qtyInput" value="${qty}" min="1" data-idx="${idx}" name="itemQuantity" aria-label="Cantidad de ${esc(item.name || 'producto')}" />
               <button class="qtyBtn" data-action="increase" data-idx="${idx}">+</button>
             </div>
             <button class="btn btnSmall btnDanger" data-action="remove" data-idx="${idx}">

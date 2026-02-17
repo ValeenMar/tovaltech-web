@@ -614,6 +614,8 @@
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
+  position: relative;
+  overflow: hidden;
   transition: all 0.2s;
 }
 
@@ -621,6 +623,15 @@
   background: var(--accent-hover);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(0, 229, 255, 0.3);
+}
+
+.btnAddToCart:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent2), 0 6px 16px rgba(0, 0, 0, 0.24);
+}
+
+.btnAddToCart:active {
+  transform: translateY(0) scale(0.985);
 }
 
 .productActions {

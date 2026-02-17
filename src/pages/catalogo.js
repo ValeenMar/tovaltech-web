@@ -17,6 +17,7 @@ let totalProducts = 0;
 let totalPages = 1;
 let hasNextPage = false;
 let hasPrevPage = false;
+const PAGE_SIZE_STORAGE_KEY = 'toval_page_size_catalogo';
 
 export function CatalogoPage() {
   return `
@@ -67,6 +68,8 @@ export function CatalogoPage() {
                 <input
                   type="number"
                   id="marginInput"
+                  name="marginInput"
+                  aria-label="Margen porcentual"
                   value="${margin}"
                   min="0"
                   max="100"
@@ -75,7 +78,7 @@ export function CatalogoPage() {
                 />
               </div>
 
-              <select class="sortSelect" id="sortSelect">
+              <select class="sortSelect" id="sortSelect" name="sortOrder" aria-label="Ordenar productos">
                 <option value="name-asc">Nombre A-Z</option>
                 <option value="name-desc">Nombre Z-A</option>
                 <option value="price-asc">Precio: menor a mayor</option>
@@ -106,10 +109,17 @@ export async function wireCatalogo() {
   const url = new URL(window.location.href);
   const pageFromUrl = Number.parseInt(url.searchParams.get('page') || '1', 10);
   const pageSizeFromUrl = Number.parseInt(url.searchParams.get('pageSize') || '60', 10);
+  const pageSizeFromStorage = Number.parseInt(localStorage.getItem(PAGE_SIZE_STORAGE_KEY) || '0', 10);
   const sortFromUrl = url.searchParams.get('sort') || 'name-asc';
 
   currentPage = Number.isFinite(pageFromUrl) && pageFromUrl > 0 ? pageFromUrl : 1;
-  itemsPerPage = [30, 60, 100, 200].includes(pageSizeFromUrl) ? pageSizeFromUrl : 60;
+  if ([30, 60, 100, 200].includes(pageSizeFromUrl)) {
+    itemsPerPage = pageSizeFromUrl;
+  } else if ([30, 60, 100, 200].includes(pageSizeFromStorage)) {
+    itemsPerPage = pageSizeFromStorage;
+  } else {
+    itemsPerPage = 60;
+  }
   currentSort = sortFromUrl;
 
   renderFilterSidebar();
@@ -340,7 +350,7 @@ function renderPagination() {
     <div class="simplePagination">
       <div class="paginationInfo">
         <span>Mostrando <strong>${startItem}-${endItem}</strong> de <strong>${totalProducts}</strong></span>
-        <select class="itemsPerPageSelect" data-pagination-action="page-size">
+        <select class="itemsPerPageSelect" data-pagination-action="page-size" name="itemsPerPage" aria-label="Items por pagina">
           <option value="30" ${itemsPerPage === 30 ? 'selected' : ''}>30 por pagina</option>
           <option value="60" ${itemsPerPage === 60 ? 'selected' : ''}>60 por pagina</option>
           <option value="100" ${itemsPerPage === 100 ? 'selected' : ''}>100 por pagina</option>
@@ -378,6 +388,7 @@ async function changeCatalogPage(page, fromBottom = false) {
 async function changeCatalogItemsPerPage(value) {
   const parsed = Number.parseInt(value, 10);
   itemsPerPage = [30, 60, 100, 200].includes(parsed) ? parsed : 60;
+  localStorage.setItem(PAGE_SIZE_STORAGE_KEY, String(itemsPerPage));
   currentPage = 1;
   await refreshProducts();
   window.scrollTo({ top: 0, behavior: 'smooth' });

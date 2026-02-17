@@ -35,7 +35,7 @@ export function FilterSidebar(options = {}) {
       
       <!-- Buscador -->
       <div class="filterGroup">
-        <label class="filterLabel">Buscar</label>
+        <label class="filterLabel" for="filterSearch">Buscar</label>
         <input 
           type="text" 
           class="filterInput" 
@@ -187,7 +187,7 @@ export function FilterSidebar(options = {}) {
       ${isAdmin ? `
         <!-- FX USD->ARS (admin only) -->
         <div class="filterGroup">
-          <label class="filterLabel">Tipo de cambio USD→ARS</label>
+          <label class="filterLabel" for="filterFX">Tipo de cambio USD→ARS</label>
           <input 
             type="number" 
             class="filterInput" 

@@ -129,11 +129,11 @@ export const CartManager = {
         const badges = document.querySelectorAll(".cartBadge");
 
         badges.forEach((badge) => {
+            badge.textContent = String(count);
             if (count > 0) {
-                badge.textContent = count;
-                badge.style.display = "inline-block";
+                badge.classList.remove("isEmpty");
             } else {
-                badge.style.display = "none";
+                badge.classList.add("isEmpty");
             }
         });
     },

@@ -52,10 +52,12 @@ export function addToCart(product) {
       addedAt: Date.now(),
       quantity: 1
     });
-    saveCart(cart);
-    return true;
+  } else {
+    exists.quantity = (exists.quantity || 1) + 1;
   }
-  return false;
+
+  saveCart(cart);
+  return true;
 }
 
 export function removeFromCart(sku, providerId) {

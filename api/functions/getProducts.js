@@ -4,6 +4,40 @@ const { TableClient } = require("@azure/data-tables");
 
 // ---- ELIT CSV enrichment (images + IVA) ----
 let _elitCsvCache = { at: 0, map: null, error: null };
+const _queryItemsCache = new Map();
+const QUERY_CACHE_TTL_MS = 2 * 60 * 1000;
+const QUERY_CACHE_MAX_ENTRIES = 24;
+
+function _getQueryCacheKey(params) {
+  return [
+    params.provider || "all",
+    params.q || "",
+    params.brandFilter || "",
+    params.categoryFilter || "",
+    params.inStockOnly ? "1" : "0",
+    String(params.limit || 10000),
+  ].join("|");
+}
+
+function _readQueryCache(key) {
+  const entry = _queryItemsCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.at > QUERY_CACHE_TTL_MS) {
+    _queryItemsCache.delete(key);
+    return null;
+  }
+  return Array.isArray(entry.items) ? entry.items : null;
+}
+
+function _writeQueryCache(key, items) {
+  _queryItemsCache.set(key, { at: Date.now(), items });
+  if (_queryItemsCache.size <= QUERY_CACHE_MAX_ENTRIES) return;
+
+  const oldest = [..._queryItemsCache.entries()]
+    .sort((a, b) => a[1].at - b[1].at)
+    .slice(0, _queryItemsCache.size - QUERY_CACHE_MAX_ENTRIES);
+  oldest.forEach(([k]) => _queryItemsCache.delete(k));
+}
 
 function _getElitCsvUrl() {
   const uid = process.env.ELIT_USER_ID;
@@ -207,6 +241,7 @@ app.http("getProducts", {
       const categoryFilter = (request.query.get("category") || "").trim().toLowerCase();
       const inStockOnly = String(request.query.get("inStock") || "").trim() === "1";
       const sort = normalizeSort(request.query.get("sort"));
+      const forceRefresh = String(request.query.get("refresh") || "") === "1";
 
       // 🚀 Paginación
       const page = Math.max(1, toNumber(request.query.get("page")) || 1);
@@ -217,105 +252,112 @@ app.http("getProducts", {
       if (!limit || limit < 1) limit = 10000; // Aumentado para paginación
       if (limit > 20000) limit = 20000;
 
-      // Soportamos 2 esquemas posibles (por compatibilidad):
-      // A) PartitionKey = providerId ("elit", "intermaco", ...), RowKey = SKU
-      // B) PartitionKey = "product" y providerId guardado como propiedad
-      // Para filtrar sin saber cuál está en uso, buscamos por PK o por propiedad providerId.
-      let filter = "";
-      if (provider && provider !== "all") {
-        const p = escapeODataString(provider);
-        filter = `(PartitionKey eq '${p}' or providerId eq '${p}')`;
-      }
+      const cacheKey = _getQueryCacheKey({ provider, q, brandFilter, categoryFilter, inStockOnly, limit });
+      const cachedItems = forceRefresh ? null : _readQueryCache(cacheKey);
 
-      const iter = filter
-        ? client.listEntities({ queryOptions: { filter } })
-        : client.listEntities();
+      let items = Array.isArray(cachedItems) ? cachedItems.slice() : null;
 
-      const byKey = new Map(); // dedupe: providerId::sku
-
-      for await (const e of iter) {
-        const rowKey = e.rowKey ?? e.RowKey ?? e.sku ?? e.id ?? e.codigo_producto ?? null;
-        const sku = rowKey ? String(rowKey).trim() : "";
-        if (!sku) continue;
-
-        const pkRaw = String(e.partitionKey ?? e.PartitionKey ?? "").trim().toLowerCase();
-        const propProvider = e.providerId ?? e.proveedorId ?? e.provider ?? null;
-
-        // Si PK parece ser un providerId, lo usamos. Si no (p.ej. "product"), usamos propiedad providerId.
-        const providerId =
-          (pkRaw && pkRaw !== "product" && pkRaw !== "products" && pkRaw !== "p")
-            ? pkRaw
-            : (propProvider ? String(propProvider).trim().toLowerCase() : (provider || null));
-
-        if (provider && provider !== "all" && providerId && providerId !== provider) continue;
-
-        const name = e.name ?? e.nombre ?? e.nombre_producto ?? null;
-        const brand = e.brand ?? e.marca ?? null;
-        const category = e.category ?? e.categoria ?? null;
-
-        if (q) {
-          const hay =
-            (sku && sku.toLowerCase().includes(q)) ||
-            (name && String(name).toLowerCase().includes(q)) ||
-            (brand && String(brand).toLowerCase().includes(q));
-          if (!hay) continue;
+      if (!items) {
+        // Soportamos 2 esquemas posibles (por compatibilidad):
+        // A) PartitionKey = providerId ("elit", "intermaco", ...), RowKey = SKU
+        // B) PartitionKey = "product" y providerId guardado como propiedad
+        // Para filtrar sin saber cuál está en uso, buscamos por PK o por propiedad providerId.
+        let filter = "";
+        if (provider && provider !== "all") {
+          const p = escapeODataString(provider);
+          filter = `(PartitionKey eq '${p}' or providerId eq '${p}')`;
         }
 
-        if (brandFilter) {
-          const brandValue = String(brand || "").trim().toLowerCase();
-          if (brandValue !== brandFilter) continue;
+        const iter = filter
+          ? client.listEntities({ queryOptions: { filter } })
+          : client.listEntities();
+
+        const byKey = new Map(); // dedupe: providerId::sku
+
+        for await (const e of iter) {
+          const rowKey = e.rowKey ?? e.RowKey ?? e.sku ?? e.id ?? e.codigo_producto ?? null;
+          const sku = rowKey ? String(rowKey).trim() : "";
+          if (!sku) continue;
+
+          const pkRaw = String(e.partitionKey ?? e.PartitionKey ?? "").trim().toLowerCase();
+          const propProvider = e.providerId ?? e.proveedorId ?? e.provider ?? null;
+
+          const providerId =
+            (pkRaw && pkRaw !== "product" && pkRaw !== "products" && pkRaw !== "p")
+              ? pkRaw
+              : (propProvider ? String(propProvider).trim().toLowerCase() : (provider || null));
+
+          if (provider && provider !== "all" && providerId && providerId !== provider) continue;
+
+          const name = e.name ?? e.nombre ?? e.nombre_producto ?? null;
+          const brand = e.brand ?? e.marca ?? null;
+          const category = e.category ?? e.categoria ?? null;
+
+          if (q) {
+            const hay =
+              (sku && sku.toLowerCase().includes(q)) ||
+              (name && String(name).toLowerCase().includes(q)) ||
+              (brand && String(brand).toLowerCase().includes(q));
+            if (!hay) continue;
+          }
+
+          if (brandFilter) {
+            const brandValue = String(brand || "").trim().toLowerCase();
+            if (brandValue !== brandFilter) continue;
+          }
+
+          if (categoryFilter) {
+            const categoryValue = String(category || "").trim().toLowerCase();
+            if (categoryValue !== categoryFilter) continue;
+          }
+
+          const item = {
+            sku,
+            providerId: providerId ? String(providerId).toLowerCase() : null,
+            name,
+            brand,
+            category,
+            price: toNumber(e.price),
+            currency: normalizeCurrency(e.currency ?? e.moneda),
+            ivaRate: toNumber(e.ivaRate ?? e.iva),
+            imageUrl: e.imageUrl ?? e.image ?? null,
+            thumbUrl: e.thumbUrl ?? e.thumbnail ?? e.miniatura ?? null,
+            stock: toNumber(e.stock),
+            updatedAt: e.updatedAt ?? e.updatedAtIso ?? e.timestamp ?? null,
+          };
+
+          if (inStockOnly && (!item.stock || item.stock <= 0)) continue;
+
+          const key = `${item.providerId || "_"}::${item.sku}`;
+          const prev = byKey.get(key);
+          if (!prev || toTime(item.updatedAt) >= toTime(prev.updatedAt)) {
+            byKey.set(key, item);
+          }
+
+          if (byKey.size >= limit) break;
         }
 
-        if (categoryFilter) {
-          const categoryValue = String(category || "").trim().toLowerCase();
-          if (categoryValue !== categoryFilter) continue;
-        }
+        items = Array.from(byKey.values());
 
-        const item = {
-          sku,
-          providerId: providerId ? String(providerId).toLowerCase() : null,
-          name,
-          brand,
-          category,
-          price: toNumber(e.price),
-          currency: normalizeCurrency(e.currency ?? e.moneda),
-          ivaRate: toNumber(e.ivaRate ?? e.iva),
-          imageUrl: e.imageUrl ?? e.image ?? null,
-          thumbUrl: e.thumbUrl ?? e.thumbnail ?? e.miniatura ?? null,
-          stock: toNumber(e.stock),
-          updatedAt: e.updatedAt ?? e.updatedAtIso ?? e.timestamp ?? null,
-        };
+        const needElit = items.some(
+          (p) => p.providerId === "elit" && (!p.thumbUrl || !p.imageUrl || p.ivaRate == null)
+        );
 
-        if (inStockOnly && (!item.stock || item.stock <= 0)) continue;
-
-        const key = `${item.providerId || "_"}::${item.sku}`;
-        const prev = byKey.get(key);
-        if (!prev || toTime(item.updatedAt) >= toTime(prev.updatedAt)) {
-          byKey.set(key, item);
-        }
-
-        if (byKey.size >= limit) break;
-      }
-
-      const items = Array.from(byKey.values());
-
-      // ELIT CSV enrichment: agrega imagen/miniatura + IVA cuando falte
-      const needElit = items.some(
-        (p) => p.providerId === "elit" && (!p.thumbUrl || !p.imageUrl || p.ivaRate == null)
-      );
-
-      if (needElit) {
-        const map = await _getElitCsvMap(context);
-        if (map) {
-          for (const p of items) {
-            if (p.providerId !== "elit") continue;
-            const extra = map.get(p.sku);
-            if (!extra) continue;
-            if (!p.imageUrl && extra.imageUrl) p.imageUrl = extra.imageUrl;
-            if (!p.thumbUrl && extra.thumbUrl) p.thumbUrl = extra.thumbUrl;
-            if ((p.ivaRate == null || p.ivaRate === 0) && extra.ivaRate) p.ivaRate = extra.ivaRate;
+        if (needElit) {
+          const map = await _getElitCsvMap(context);
+          if (map) {
+            for (const p of items) {
+              if (p.providerId !== "elit") continue;
+              const extra = map.get(p.sku);
+              if (!extra) continue;
+              if (!p.imageUrl && extra.imageUrl) p.imageUrl = extra.imageUrl;
+              if (!p.thumbUrl && extra.thumbUrl) p.thumbUrl = extra.thumbUrl;
+              if ((p.ivaRate == null || p.ivaRate === 0) && extra.ivaRate) p.ivaRate = extra.ivaRate;
+            }
           }
         }
+
+        _writeQueryCache(cacheKey, items);
       }
 
       items.sort((a, b) => {

@@ -4,6 +4,8 @@
 const CART_KEY = 'toval_cart';
 const LEGACY_CART_KEY = 'tovaltech_cart';
 const WHATSAPP_PHONE = '5491123413674';
+let cartFxUsdArs = 1200;
+let cartFxAt = 0;
 
 function esc(s) {
   return String(s ?? '')
@@ -59,7 +61,7 @@ function updateCartBadge() {
   if (!badge) return;
 
   badge.textContent = String(total);
-  badge.style.display = total > 0 ? 'flex' : 'none';
+  badge.classList.toggle('isEmpty', total <= 0);
 }
 
 function formatMoney(amount) {
@@ -68,6 +70,16 @@ function formatMoney(amount) {
     style: 'currency',
     currency: 'ARS',
     maximumFractionDigits: 0,
+  }).format(amount);
+}
+
+function formatUsd(amount) {
+  if (!Number.isFinite(amount)) return '-';
+  return new Intl.NumberFormat('es-AR', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(amount);
 }
 
@@ -82,6 +94,49 @@ function getItemFinalPrice(item) {
   const iva = Number.isFinite(ivaRate) ? ivaRate : 10.5;
   const withIva = base * (1 + iva / 100);
   return Math.round(withIva);
+}
+
+function getItemUsdWithIva(item) {
+  const base = Number(item.price);
+  if (!Number.isFinite(base) || base <= 0) return null;
+
+  const ivaRate = Number(item.ivaRate);
+  const iva = Number.isFinite(ivaRate) ? ivaRate : 10.5;
+  const withIva = base * (1 + iva / 100);
+  const currency = String(item.currency || 'USD').toUpperCase();
+
+  if (currency === 'USD') return withIva;
+  if (currency === 'ARS' && cartFxUsdArs > 0) return withIva / cartFxUsdArs;
+  return null;
+}
+
+function getItemArsFinal(item) {
+  const direct = Number(item.finalPrice);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+
+  const usdWithIva = getItemUsdWithIva(item);
+  if (Number.isFinite(usdWithIva) && cartFxUsdArs > 0) {
+    return Math.round(usdWithIva * cartFxUsdArs);
+  }
+
+  return getItemFinalPrice(item);
+}
+
+async function ensureCartFxFresh() {
+  const now = Date.now();
+  if (now - cartFxAt < 5 * 60 * 1000) return;
+
+  try {
+    const res = await fetch('/api/dollar-rate', { cache: 'no-store' });
+    const data = await res.json().catch(() => null);
+    const value = Number(data?.venta);
+    if (res.ok && Number.isFinite(value) && value > 0) {
+      cartFxUsdArs = value;
+      cartFxAt = now;
+    }
+  } catch {
+    // keep last known fx
+  }
 }
 
 function buildWhatsAppMessage(cart) {
@@ -120,7 +175,7 @@ function ensureCartDrawer() {
     <aside class="cartDrawer" id="cartDrawer" aria-hidden="true">
       <div class="cartDrawerHeader">
         <h3>Tu carrito</h3>
-        <button class="btn btnSecondary" id="cartDrawerClose" type="button">Cerrar</button>
+        <button class="btn cartDrawerCloseBtn" id="cartDrawerClose" type="button" aria-label="Cerrar carrito">Cerrar</button>
       </div>
       <div class="cartDrawerBody" id="cartDrawerBody"></div>
       <div class="cartDrawerFooter" id="cartDrawerFooter"></div>
@@ -145,7 +200,8 @@ function renderCartDrawer() {
   let total = 0;
   body.innerHTML = cart.map((item, idx) => {
     const qty = item.quantity || 1;
-    const unit = getItemFinalPrice(item);
+    const unit = getItemArsFinal(item);
+    const usdWithIva = getItemUsdWithIva(item);
     const subtotal = unit * qty;
     total += subtotal;
 
@@ -154,13 +210,14 @@ function renderCartDrawer() {
         <div class="cartDrawerItemMain">
           <strong>${esc(item.name || 'Producto')}</strong>
           <span class="muted">SKU: ${esc(item.sku || '-')}</span>
-          <span>${formatMoney(subtotal)}</span>
+          <span class="cartDrawerUsd">USD (IVA incl.): ${usdWithIva ? formatUsd(usdWithIva * qty) : '-'}</span>
+          <span class="cartDrawerArs">${formatMoney(subtotal)}</span>
         </div>
         <div class="cartDrawerQty">
-          <button type="button" data-cart-action="dec" data-idx="${idx}">-</button>
-          <span>${qty}</span>
-          <button type="button" data-cart-action="inc" data-idx="${idx}">+</button>
-          <button type="button" data-cart-action="remove" data-idx="${idx}">Quitar</button>
+          <button type="button" class="cartDrawerQtyBtn" data-cart-action="dec" data-idx="${idx}" aria-label="Restar unidad">-</button>
+          <span class="cartDrawerQtyValue">${qty}</span>
+          <button type="button" class="cartDrawerQtyBtn" data-cart-action="inc" data-idx="${idx}" aria-label="Sumar unidad">+</button>
+          <button type="button" class="cartDrawerRemoveBtn" data-cart-action="remove" data-idx="${idx}">Quitar</button>
         </div>
       </div>
     `;
@@ -171,12 +228,13 @@ function renderCartDrawer() {
       <span>Total</span>
       <strong>${formatMoney(total)}</strong>
     </div>
-    <button type="button" class="btn btnPrimary" id="cartDrawerWhatsApp">Consultar por WhatsApp</button>
+    <button type="button" class="btn btnPrimary cartDrawerWhatsAppBtn" id="cartDrawerWhatsApp">Consultar por WhatsApp</button>
   `;
 }
 
-function openCartDrawer() {
+async function openCartDrawer() {
   ensureCartDrawer();
+  await ensureCartFxFresh();
   renderCartDrawer();
 
   const drawer = document.getElementById('cartDrawer');
@@ -334,6 +392,7 @@ function initUiShell() {
   initThemeToggle();
   initGlobalHandlers();
   ensureCartDrawer();
+  ensureCartFxFresh();
   updateCartBadge();
   renderCartDrawer();
   updateUserMenu();
