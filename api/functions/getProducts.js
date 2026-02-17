@@ -191,8 +191,13 @@ app.http("getProducts", {
       const qRaw = (request.query.get("q") || "").trim();
       const q = qRaw.toLowerCase();
 
+      // 🚀 Paginación
+      const page = Math.max(1, toNumber(request.query.get("page")) || 1);
+      const pageSize = Math.max(1, Math.min(200, toNumber(request.query.get("pageSize")) || 50));
+
+      // Limit total para prevenir carga infinita
       let limit = toNumber(request.query.get("limit"));
-      if (!limit || limit < 1) limit = 5000;
+      if (!limit || limit < 1) limit = 10000; // Aumentado para paginación
       if (limit > 20000) limit = 20000;
 
       // Soportamos 2 esquemas posibles (por compatibilidad):
@@ -292,10 +297,29 @@ app.http("getProducts", {
         return asku.localeCompare(bsku);
       });
 
+      // 🚀 Aplicar paginación
+      const totalCount = items.length;
+      const totalPages = Math.ceil(totalCount / pageSize);
+      const startIndex = (page - 1) * pageSize;
+      const endIndex = startIndex + pageSize;
+      const paginatedItems = items.slice(startIndex, endIndex);
+
       return {
         status: 200,
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ok: true, items }),
+        body: JSON.stringify({
+          ok: true,
+          items: paginatedItems,
+          // Metadatos de paginación
+          pagination: {
+            page,
+            pageSize,
+            totalCount,
+            totalPages,
+            hasNextPage: page < totalPages,
+            hasPrevPage: page > 1,
+          },
+        }),
       };
     } catch (err) {
       context.error(err);

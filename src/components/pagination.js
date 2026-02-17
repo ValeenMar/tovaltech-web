@@ -1,22 +1,26 @@
 // File: /src/components/pagination.js
-// Sistema de paginación para catálogo
+// Sistema de paginación para catálogo - actualizado para backend pagination
 
-export function createPagination(totalItems, itemsPerPage = 50, currentPage = 1) {
-  const totalPages = Math.ceil(totalItems / itemsPerPage);
-  
-  if (totalPages <= 1) {
+/** 
+ * @param {Object} pagination - Objeto de paginación del backend
+ * @param {number} pagination.page - Página actual
+ * @param {number} pagination.pageSize - Items por página  
+ * @param {number} pagination.totalCount - Total de items
+ * @param {number} pagination.totalPages - Total de páginas
+ */
+export function createPagination(pagination) {
+  if (!pagination || pagination.totalPages <= 1) {
     return {
       html: '',
       currentPage: 1,
       totalPages: 1,
-      start: 0,
-      end: totalItems
     };
   }
-  
-  const start = (currentPage - 1) * itemsPerPage;
-  const end = Math.min(start + itemsPerPage, totalItems);
-  
+
+  const { page: currentPage, pageSize, totalCount, totalPages } = pagination;
+  const start = (currentPage - 1) * pageSize;
+  const end = Math.min(start + pageSize, totalCount);
+
   // Calcular páginas a mostrar (máximo 7 botones)
   let pages = [];
   if (totalPages <= 7) {
@@ -30,7 +34,7 @@ export function createPagination(totalItems, itemsPerPage = 50, currentPage = 1)
       pages = [1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages];
     }
   }
-  
+
   const html = `
     <div class="pagination">
       <button class="paginationBtn" data-page="${currentPage - 1}" ${currentPage <= 1 ? 'disabled' : ''}>
@@ -38,16 +42,16 @@ export function createPagination(totalItems, itemsPerPage = 50, currentPage = 1)
       </button>
       
       ${pages.map(page => {
-        if (page === '...') {
-          return `<span class="paginationDots">...</span>`;
-        }
-        return `
+    if (page === '...') {
+      return `<span class="paginationDots">...</span>`;
+    }
+    return `
           <button class="paginationBtn ${page === currentPage ? 'active' : ''}" 
                   data-page="${page}">
             ${page}
           </button>
         `;
-      }).join('')}
+  }).join('')}
       
       <button class="paginationBtn" data-page="${currentPage + 1}" ${currentPage >= totalPages ? 'disabled' : ''}>
         Siguiente →
@@ -55,24 +59,22 @@ export function createPagination(totalItems, itemsPerPage = 50, currentPage = 1)
     </div>
     
     <div class="paginationInfo">
-      Mostrando ${start + 1}-${end} de ${totalItems} productos
+      Mostrando ${start + 1}-${end} de ${totalCount} productos
     </div>
   `;
-  
+
   return {
     html,
     currentPage,
     totalPages,
-    start,
-    end
   };
 }
 
 export function wirePagination(container, onPageChange) {
   if (!container) return;
-  
+
   const buttons = container.querySelectorAll('.paginationBtn:not([disabled])');
-  
+
   buttons.forEach(btn => {
     btn.addEventListener('click', () => {
       const page = parseInt(btn.dataset.page);
