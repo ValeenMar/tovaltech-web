@@ -122,6 +122,13 @@ function getItemArsFinal(item) {
   return getItemFinalPrice(item);
 }
 
+function getItemImage(item) {
+  const raw = item?.imageUrl || item?.thumbUrl || '';
+  const value = String(raw || '').trim();
+  if (!value) return null;
+  return value;
+}
+
 async function ensureCartFxFresh() {
   const now = Date.now();
   if (now - cartFxAt < 5 * 60 * 1000) return;
@@ -175,7 +182,7 @@ function ensureCartDrawer() {
     <aside class="cartDrawer" id="cartDrawer" aria-hidden="true">
       <div class="cartDrawerHeader">
         <h3>Tu carrito</h3>
-        <button class="btn cartDrawerCloseBtn" id="cartDrawerClose" type="button" aria-label="Cerrar carrito">Cerrar</button>
+        <button class="cartDrawerCloseBtn" id="cartDrawerClose" type="button" aria-label="Cerrar carrito">×</button>
       </div>
       <div class="cartDrawerBody" id="cartDrawerBody"></div>
       <div class="cartDrawerFooter" id="cartDrawerFooter"></div>
@@ -203,10 +210,17 @@ function renderCartDrawer() {
     const unit = getItemArsFinal(item);
     const usdWithIva = getItemUsdWithIva(item);
     const subtotal = unit * qty;
+    const img = getItemImage(item);
     total += subtotal;
 
     return `
       <div class="cartDrawerItem" data-idx="${idx}">
+        <div class="cartDrawerItemThumb">
+          ${img
+            ? `<img src="${esc(img)}" alt="${esc(item.name || 'Producto')}" loading="lazy" />`
+            : `<div class="cartDrawerItemPh">${esc((item.brand || item.name || 'P')[0])}</div>`
+          }
+        </div>
         <div class="cartDrawerItemMain">
           <strong>${esc(item.name || 'Producto')}</strong>
           <span class="muted">SKU: ${esc(item.sku || '-')}</span>
