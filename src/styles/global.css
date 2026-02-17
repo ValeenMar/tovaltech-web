@@ -1503,3 +1503,120 @@ code {
     font-size: 14px;
   }
 }
+/* ============================================
+   PAGINACIÓN SIMPLE
+   Copiar y pegar al FINAL de global.css
+   ============================================ */
+
+.simplePagination {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  margin: 24px 0;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.paginationInfo {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.paginationInfo span {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.paginationInfo strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.itemsPerPageSelect {
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.itemsPerPageSelect:hover {
+  border-color: var(--primary);
+}
+
+.itemsPerPageSelect:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+}
+
+.paginationControls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+}
+
+.pageBtn {
+  padding: 10px 20px;
+  background: var(--primary);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.pageBtn:hover:not(:disabled) {
+  background: var(--primary-dark, #0284c7);
+  transform: translateY(-1px);
+}
+
+.pageBtn:disabled {
+  background: var(--border);
+  color: var(--text-tertiary);
+  cursor: not-allowed;
+  transform: none;
+}
+
+.pageNumbers {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding: 0 12px;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .simplePagination {
+    padding: 16px;
+  }
+  
+  .paginationInfo {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .itemsPerPageSelect {
+    width: 100%;
+  }
+  
+  .paginationControls {
+    flex-wrap: wrap;
+  }
+  
+  .pageBtn {
+    flex: 1;
+    min-width: 100px;
+  }
+}

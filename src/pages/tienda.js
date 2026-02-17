@@ -1,15 +1,19 @@
 // File: /src/pages/tienda.js
-// Tienda - Versión cliente (filtros simplificados, precios con IVA siempre)
+// Tienda CON PAGINACIÓN SIMPLE (sin archivos externos)
 
 import { ProductCard, wireProductCards } from '../components/ProductCard.js';
 import { FilterSidebar, wireFilterSidebar, getFiltersFromURL, setFiltersToURL } from '../components/FilterSidebar.js';
-import { getFxUsdArs, getMargin, formatMoney } from '../utils/dataHelpers.js';
+import { getFxUsdArs, getMargin } from '../utils/dataHelpers.js';
 
 let allProducts = [];
 let filteredProducts = [];
 let currentFilters = {};
 let fx = 1420;
 let margin = 15;
+
+// Variables de paginación
+let currentPage = 1;
+let itemsPerPage = 60;
 
 export function TiendaPage() {
   return `
@@ -46,9 +50,15 @@ export function TiendaPage() {
             </select>
           </div>
           
+          <!-- Paginación superior -->
+          <div id="paginationTop"></div>
+          
           <div class="productsGrid" id="productsGrid">
             <div class="loading">Cargando productos...</div>
           </div>
+          
+          <!-- Paginación inferior -->
+          <div id="paginationBottom"></div>
         </div>
       </div>
     </div>
@@ -56,37 +66,28 @@ export function TiendaPage() {
 }
 
 export async function wireTienda() {
-  // Obtener FX y margen
   fx = await getFxUsdArs();
   margin = getMargin();
-  
-  // Cargar filtros desde URL
   currentFilters = getFiltersFromURL();
   
-  // Cargar productos
   await loadProducts();
-  
-  // Renderizar sidebar
   renderFilterSidebar();
   
-  // Wire filtros
   wireFilterSidebar({
     onFilterChange: handleFilterChange,
     onClearFilters: handleClearFilters
   });
   
-  // Wire sort
   document.getElementById('sortSelect')?.addEventListener('change', (e) => {
     sortProducts(e.target.value);
+    currentPage = 1;
     renderProducts();
   });
   
-  // Wire toggle filters (mobile)
   document.getElementById('btnToggleFilters')?.addEventListener('click', () => {
     document.getElementById('storeFilters')?.classList.toggle('show');
   });
   
-  // Aplicar filtros iniciales
   applyFilters();
 }
 
@@ -95,17 +96,11 @@ async function loadProducts() {
     const res = await fetch('/api/getProducts?limit=5000');
     const data = await res.json();
     
-    if (!res.ok || !data.ok) {
-      throw new Error('API error');
-    }
+    if (!res.ok || !data.ok) throw new Error('API error');
     
     allProducts = Array.isArray(data.items) ? data.items : [];
-    
-    // Enriquecer con precio final
     allProducts = allProducts.map(p => enrichProduct(p));
-    
     filteredProducts = [...allProducts];
-    
   } catch (err) {
     console.error('Error loading products:', err);
     allProducts = [];
@@ -117,16 +112,12 @@ function enrichProduct(p) {
   const base = typeof p.price === 'number' ? p.price : parseFloat(p.price) || 0;
   const iva = typeof p.ivaRate === 'number' ? p.ivaRate : parseFloat(p.ivaRate) || 10.5;
   
-  if (base <= 0) {
-    return { ...p, finalPrice: null };
-  }
+  if (base <= 0) return { ...p, finalPrice: null };
   
   const withIva = base * (1 + iva / 100);
   const withMargin = withIva * (1 + margin / 100);
   
   let finalPrice = withMargin;
-  
-  // Si es USD, convertir a ARS
   const currency = String(p.currency || 'USD').toUpperCase();
   if (currency === 'USD' && fx) {
     finalPrice = withMargin * fx;
@@ -145,7 +136,6 @@ function renderFilterSidebar() {
   const container = document.getElementById('storeFilters');
   if (!container) return;
   
-  // Extraer listas únicas
   const brands = [...new Set(allProducts.map(p => p.brand).filter(Boolean))].sort();
   const categories = [...new Set(allProducts.map(p => p.category).filter(Boolean))].sort();
   
@@ -153,7 +143,6 @@ function renderFilterSidebar() {
     mode: 'client',
     brands,
     categories,
-    providers: [],
     currentFilters
   });
 }
@@ -161,58 +150,47 @@ function renderFilterSidebar() {
 function handleFilterChange(filters) {
   currentFilters = filters;
   setFiltersToURL(filters);
+  allProducts = allProducts.map(p => enrichProduct(p));
   applyFilters();
-  
-  // Cerrar sidebar en mobile
-  document.getElementById('storeFilters')?.classList.remove('show');
 }
 
 function handleClearFilters() {
   currentFilters = {};
   setFiltersToURL({});
-  renderFilterSidebar();
-  wireFilterSidebar({
-    onFilterChange: handleFilterChange,
-    onClearFilters: handleClearFilters
-  });
+  document.querySelectorAll('.filterCheckbox').forEach(cb => cb.checked = false);
+  document.querySelectorAll('.filterInput').forEach(input => input.value = '');
   applyFilters();
 }
 
 function applyFilters() {
   filteredProducts = allProducts.filter(p => {
-    // Search
     if (currentFilters.search) {
-      const q = currentFilters.search.toLowerCase();
-      const text = `${p.name || ''} ${p.sku || ''} ${p.brand || ''}`.toLowerCase();
-      if (!text.includes(q)) return false;
+      const search = currentFilters.search.toLowerCase();
+      const searchableText = [p.name, p.sku, p.brand, p.category, p.description]
+        .filter(Boolean).join(' ').toLowerCase();
+      if (!searchableText.includes(search)) return false;
     }
     
-    // Category
-    if (currentFilters.category && p.category !== currentFilters.category) {
-      return false;
+    if (currentFilters.brands && currentFilters.brands.length > 0) {
+      if (!currentFilters.brands.includes(p.brand)) return false;
     }
     
-    // Brand
-    if (currentFilters.brand && p.brand !== currentFilters.brand) {
-      return false;
+    if (currentFilters.categories && currentFilters.categories.length > 0) {
+      if (!currentFilters.categories.includes(p.category)) return false;
     }
     
-    // Price range
     if (currentFilters.priceMin || currentFilters.priceMax) {
       const price = p.finalPrice || 0;
-      
       if (currentFilters.priceMin && price < currentFilters.priceMin) return false;
       if (currentFilters.priceMax && price > currentFilters.priceMax) return false;
     }
     
-    // Stock
-    if (currentFilters.inStock && (!p.stock || p.stock <= 0)) {
-      return false;
-    }
+    if (currentFilters.inStock && (!p.stock || p.stock <= 0)) return false;
     
     return true;
   });
   
+  currentPage = 1;
   renderProducts();
 }
 
@@ -239,7 +217,12 @@ function renderProducts() {
   
   if (!grid) return;
   
-  if (filteredProducts.length === 0) {
+  const total = filteredProducts.length;
+  if (count) {
+    count.textContent = `${total} producto${total !== 1 ? 's' : ''}`;
+  }
+  
+  if (total === 0) {
     grid.innerHTML = `
       <div class="emptyState">
         <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -251,29 +234,91 @@ function renderProducts() {
         <button class="btn btnPrimary" id="btnClearEmpty">Limpiar filtros</button>
       </div>
     `;
-    
     document.getElementById('btnClearEmpty')?.addEventListener('click', handleClearFilters);
-    
-    if (count) count.textContent = '0 productos';
+    document.getElementById('paginationTop').innerHTML = '';
+    document.getElementById('paginationBottom').innerHTML = '';
     return;
   }
   
-  grid.innerHTML = filteredProducts
+  // Calcular productos de la página actual
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const pageProducts = filteredProducts.slice(startIndex, endIndex);
+  
+  // Renderizar solo productos de esta página
+  grid.innerHTML = pageProducts
     .map(p => ProductCard(p, { mode: 'client', onAddToCart: handleAddToCart }))
     .join('');
   
   wireProductCards(grid, { onAddToCart: handleAddToCart });
   
-  if (count) {
-    count.textContent = `${filteredProducts.length} producto${filteredProducts.length !== 1 ? 's' : ''}`;
-  }
+  // Renderizar paginación
+  renderPagination();
 }
+
+function renderPagination() {
+  const total = filteredProducts.length;
+  const totalPages = Math.ceil(total / itemsPerPage);
+  
+  if (totalPages <= 1) {
+    document.getElementById('paginationTop').innerHTML = '';
+    document.getElementById('paginationBottom').innerHTML = '';
+    return;
+  }
+  
+  const startItem = (currentPage - 1) * itemsPerPage + 1;
+  const endItem = Math.min(currentPage * itemsPerPage, total);
+  
+  const html = `
+    <div class="simplePagination">
+      <div class="paginationInfo">
+        <span>Mostrando <strong>${startItem}-${endItem}</strong> de <strong>${total}</strong></span>
+        <select class="itemsPerPageSelect" onchange="window.changeItemsPerPage(this.value)">
+          <option value="30" ${itemsPerPage === 30 ? 'selected' : ''}>30 por página</option>
+          <option value="60" ${itemsPerPage === 60 ? 'selected' : ''}>60 por página</option>
+          <option value="100" ${itemsPerPage === 100 ? 'selected' : ''}>100 por página</option>
+          <option value="200" ${itemsPerPage === 200 ? 'selected' : ''}>200 por página</option>
+        </select>
+      </div>
+      <div class="paginationControls">
+        <button onclick="window.changePage(${currentPage - 1}, event)" ${currentPage === 1 ? 'disabled' : ''} class="pageBtn">
+          ← Anterior
+        </button>
+        <span class="pageNumbers">Página ${currentPage} de ${totalPages}</span>
+        <button onclick="window.changePage(${currentPage + 1}, event)" ${currentPage === totalPages ? 'disabled' : ''} class="pageBtn">
+          Siguiente →
+        </button>
+      </div>
+    </div>
+  `;
+  
+  document.getElementById('paginationTop').innerHTML = html;
+  document.getElementById('paginationBottom').innerHTML = html;
+}
+
+// Funciones globales para paginación
+window.changePage = function(page, event) {
+  if (event) {
+    const isBottom = event.target.closest('#paginationBottom') !== null;
+    if (isBottom) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }
+  currentPage = page;
+  renderProducts();
+};
+
+window.changeItemsPerPage = function(value) {
+  itemsPerPage = parseInt(value);
+  currentPage = 1;
+  renderProducts();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
 
 function handleAddToCart(sku) {
   const product = allProducts.find(p => p.sku === sku);
   if (!product) return;
   
-  // Obtener carrito actual
   let cart = [];
   try {
     const stored = localStorage.getItem('toval_cart');
@@ -282,7 +327,6 @@ function handleAddToCart(sku) {
     cart = [];
   }
   
-  // Buscar si ya existe
   const existing = cart.find(item => item.sku === sku);
   
   if (existing) {
@@ -298,13 +342,8 @@ function handleAddToCart(sku) {
     });
   }
   
-  // Guardar
   localStorage.setItem('toval_cart', JSON.stringify(cart));
-  
-  // Feedback visual
   showToast(`${product.name} agregado al carrito`);
-  
-  // Actualizar contador de carrito (si existe)
   updateCartBadge();
 }
 
@@ -332,7 +371,5 @@ function updateCartBadge() {
       badge.textContent = total;
       badge.style.display = total > 0 ? 'flex' : 'none';
     }
-  } catch {
-    // ignore
-  }
+  } catch {}
 }
