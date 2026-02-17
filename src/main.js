@@ -3,6 +3,7 @@
 
 import './bootstrap/uiInit.js';
 
+import { authFetch, clearAuthToken } from './utils/authHelper.js';
 import { HomePage, wireHome } from './pages/home.js';
 import { TiendaPage, wireTienda } from './pages/tienda.js';
 import { CatalogoPage, wireCatalogo } from './pages/catalogo.js';
@@ -36,10 +37,11 @@ const routes = [
     view: () => '<div class="page"><p>Cerrando sesión...</p></div>',
     wire: async () => {
       try {
-        await fetch('/api/logout', { method: 'POST', credentials: 'include' });
+        await authFetch('/api/logout', { method: 'POST' });
       } catch {
         // ignore
       }
+      clearAuthToken();
       window.location.href = '/login';
     },
     auth: false,
@@ -134,7 +136,7 @@ async function router() {
 
 async function loadCurrentUser() {
   try {
-    const res = await fetch('/api/me', { credentials: 'include' });
+    const res = await authFetch('/api/me');
     if (!res.ok) {
       currentUser = null;
       return;

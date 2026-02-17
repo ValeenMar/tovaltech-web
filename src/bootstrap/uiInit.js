@@ -7,6 +7,12 @@ const WHATSAPP_PHONE = '5491123413674';
 let cartFxUsdArs = 1200;
 let cartFxAt = 0;
 
+function getAuthHeaders() {
+  const token = localStorage.getItem('tt_token');
+  if (!token) return {};
+  return { Authorization: `Bearer ${token}` };
+}
+
 function esc(s) {
   return String(s ?? '')
     .replace(/&/g, '&amp;')
@@ -289,9 +295,11 @@ function mutateCartItem(action, idx) {
 
 async function logout() {
   try {
-    await fetch('/api/logout', { method: 'POST', credentials: 'include' });
+    await fetch('/api/logout', { method: 'POST', credentials: 'include', headers: getAuthHeaders() });
   } catch {
     // ignore
+  }
+  localStorage.removeItem('tt_token');
   }
   window.location.href = '/';
 }
@@ -306,6 +314,7 @@ async function updateUserMenu() {
   try {
     const res = await fetch('/api/me', {
       credentials: 'include',
+      headers: getAuthHeaders(),
     });
 
     if (res.ok) {

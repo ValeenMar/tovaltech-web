@@ -1,4 +1,6 @@
 // File: /src/pages/login.js
+import { saveAuthToken } from '../utils/authHelper.js';
+
 export function LoginPage() {
   return `
     <div class="loginContainer">
@@ -86,6 +88,8 @@ export async function wireLogin() {
       }
 
       if (data.user) {
+        // Guardar token para requests posteriores (fallback al cookie HttpOnly)
+        saveAuthToken(data.token);
         if (data.user.role === "admin") {
           window.location.href = "/catalogo";
         } else {
