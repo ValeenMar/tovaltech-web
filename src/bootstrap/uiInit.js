@@ -300,7 +300,6 @@ async function logout() {
     // ignore
   }
   localStorage.removeItem('tt_token');
-  }
   window.location.href = '/';
 }
 
