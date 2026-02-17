@@ -1,11 +1,13 @@
 // File: /src/pages/catalogo.js
-// Catalogo admin con paginacion server-side
+// Catalogo admin con paginacion server-side, margen global via API y subcategorías
 
 import { ProductCard, wireProductCards } from '../components/ProductCard.js';
 import { FilterSidebar, wireFilterSidebar, getFiltersFromURL, setFiltersToURL } from '../components/FilterSidebar.js';
-import { getFxUsdArs, getMargin, setMargin } from '../utils/dataHelpers.js';
+import { getFxUsdArs, getMargin, getMarginFromApi, saveMarginToApi, classifyProduct } from '../utils/dataHelpers.js';
+import { getAuthHeaders } from '../utils/authHelper.js';
 
-let pageProducts = [];
+let pageProducts = [];       // productos de la página actual (ya enriquecidos)
+let allPageRaw = [];         // productos raw (sin enriquecer) para re-filtrar subcategoría
 let currentFilters = {};
 let fx = 1420;
 let margin = 15;
@@ -24,8 +26,8 @@ export function CatalogoPage() {
     <div class="catalogPage">
       <div class="catalogHeader">
         <div>
-          <h1 class="pageTitle">Catalogo Completo</h1>
-          <p class="pageSubtitle">Gestion de productos (Admin)</p>
+          <h1 class="pageTitle">Catálogo Completo</h1>
+          <p class="pageSubtitle">Gestión de productos (Admin)</p>
         </div>
 
         <div class="catalogActions">
@@ -37,7 +39,6 @@ export function CatalogoPage() {
             </svg>
             Importar Proveedores
           </button>
-
           <button class="btn btnPrimary" id="btnAddProduct">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="12" y1="5" x2="12" y2="19"/>
@@ -64,7 +65,7 @@ export function CatalogoPage() {
 
             <div class="toolbarActions">
               <div class="marginControl">
-                <label for="marginInput">Margen %:</label>
+                <label for="marginInput">Margen global %:</label>
                 <input
                   type="number"
                   id="marginInput"
@@ -72,10 +73,18 @@ export function CatalogoPage() {
                   aria-label="Margen porcentual"
                   value="${margin}"
                   min="0"
-                  max="100"
+                  max="500"
                   step="0.1"
                   class="marginInput"
                 />
+                <button class="btn btnSecondary btnSm" id="btnSaveMargin" title="Guardar margen para todos los admins">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                    <polyline points="17 21 17 13 7 13 7 21"/>
+                    <polyline points="7 3 7 8 15 8"/>
+                  </svg>
+                  Guardar
+                </button>
               </div>
 
               <select class="sortSelect" id="sortSelect" name="sortOrder" aria-label="Ordenar productos">
@@ -83,11 +92,12 @@ export function CatalogoPage() {
                 <option value="name-desc">Nombre Z-A</option>
                 <option value="price-asc">Precio: menor a mayor</option>
                 <option value="price-desc">Precio: mayor a menor</option>
-                <option value="newest">Mas nuevos</option>
+                <option value="newest">Más nuevos</option>
               </select>
             </div>
           </div>
 
+          <div id="marginSaveStatus" class="marginSaveStatus"></div>
           <div id="paginationTop"></div>
 
           <div class="productsGrid" id="productsGrid">
@@ -102,8 +112,16 @@ export function CatalogoPage() {
 }
 
 export async function wireCatalogo() {
-  fx = await getFxUsdArs();
-  margin = getMargin();
+  // Cargar FX y margen global desde API
+  [fx, margin] = await Promise.all([
+    getFxUsdArs(),
+    getMarginFromApi()
+  ]);
+
+  // Actualizar el input con el margen real
+  const marginInputEl = document.getElementById('marginInput');
+  if (marginInputEl) marginInputEl.value = String(margin);
+
   currentFilters = getFiltersFromURL();
 
   const url = new URL(window.location.href);
@@ -123,29 +141,67 @@ export async function wireCatalogo() {
   currentSort = sortFromUrl;
 
   renderFilterSidebar();
-  wireFilterSidebar({
-    onFilterChange: handleFilterChange,
-    onClearFilters: handleClearFilters,
-  });
+  wireFilterSidebar({ onFilterChange: handleFilterChange, onClearFilters: handleClearFilters });
 
   const sortSel = document.getElementById('sortSelect');
   if (sortSel) {
     sortSel.value = currentSort;
-    sortSel.addEventListener('change', async (e) => {
+    sortSel.addEventListener('change', async e => {
       currentSort = e.target.value;
       currentPage = 1;
       await refreshProducts();
     });
   }
 
-  const marginInput = document.getElementById('marginInput');
-  if (marginInput) {
-    marginInput.addEventListener('change', () => {
-      margin = setMargin(marginInput.value);
-      pageProducts = pageProducts.map((p) => enrichProduct(p));
+  // Margen: al cambiar el input, re-renderiza los precios (sin guardar aún)
+  document.getElementById('marginInput')?.addEventListener('input', () => {
+    const val = parseFloat(document.getElementById('marginInput').value);
+    if (Number.isFinite(val) && val >= 0) {
+      margin = val;
+      pageProducts = allPageRaw.map(p => enrichProduct(p));
+      applySubcategoryFilter();
       renderProducts();
-    });
-  }
+    }
+  });
+
+  // Guardar margen globalmente (API)
+  document.getElementById('btnSaveMargin')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btnSaveMargin');
+    const statusEl = document.getElementById('marginSaveStatus');
+    const val = parseFloat(document.getElementById('marginInput').value);
+    if (!Number.isFinite(val) || val < 0) return;
+
+    btn.disabled = true;
+    btn.textContent = 'Guardando...';
+    statusEl.textContent = '';
+
+    const token = localStorage.getItem('tt_token');
+    const saved = await saveMarginToApi(val, token);
+
+    btn.disabled = false;
+    btn.innerHTML = `
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+        <polyline points="17 21 17 13 7 13 7 21"/>
+        <polyline points="7 3 7 8 15 8"/>
+      </svg>
+      Guardar
+    `;
+
+    if (saved !== null) {
+      margin = saved;
+      pageProducts = allPageRaw.map(p => enrichProduct(p));
+      applySubcategoryFilter();
+      renderProducts();
+      statusEl.textContent = `✅ Margen guardado: ${saved}% (aplica para todos los admins)`;
+      statusEl.className = 'marginSaveStatus saved';
+    } else {
+      statusEl.textContent = '❌ Error al guardar. Revisá permisos.';
+      statusEl.className = 'marginSaveStatus error';
+    }
+
+    setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'marginSaveStatus'; }, 4000);
+  });
 
   document.getElementById('btnToggleFilters')?.addEventListener('click', () => {
     document.getElementById('catalogFilters')?.classList.toggle('show');
@@ -162,14 +218,20 @@ export async function wireCatalogo() {
   await refreshProducts();
 }
 
+// Enriquecer producto: usa marginOverride si el producto lo tiene, sino margen global
 function enrichProduct(p) {
   const base = typeof p.price === 'number' ? p.price : parseFloat(p.price) || 0;
   const iva = typeof p.ivaRate === 'number' ? p.ivaRate : parseFloat(p.ivaRate) || 10.5;
 
   if (base <= 0) return { ...p, finalPrice: null };
 
+  // Override por producto si existe
+  const effectiveMargin = (p.marginOverride !== null && p.marginOverride !== undefined && p.marginOverride >= 0)
+    ? p.marginOverride
+    : margin;
+
   const withIva = currentFilters.withIVA !== false ? base * (1 + iva / 100) : base;
-  const withMargin = withIva * (1 + margin / 100);
+  const withMargin = withIva * (1 + effectiveMargin / 100);
 
   let finalPrice = withMargin;
   const currency = String(p.currency || 'USD').toUpperCase();
@@ -183,22 +245,48 @@ function enrichProduct(p) {
     finalPrice: Math.round(finalPrice),
     basePriceUsd: base,
     ivaRate: iva,
-    marginRate: margin,
+    marginRate: effectiveMargin,
+    hasMarginOverride: p.marginOverride !== null && p.marginOverride !== undefined,
   };
+}
+
+// Construye árbol de subcategorías desde los productos
+function buildSubcategoryTree(products) {
+  const tree = {};
+  products.forEach(p => {
+    const { cat, sub } = classifyProduct(p);
+    if (!tree[cat]) tree[cat] = {};
+    tree[cat][sub] = (tree[cat][sub] || 0) + 1;
+  });
+  return tree;
+}
+
+// Filtra productos por subcategoría (client-side)
+let displayedProducts = [];
+
+function applySubcategoryFilter() {
+  if (!currentFilters.subcategory) {
+    displayedProducts = pageProducts;
+    return;
+  }
+  displayedProducts = pageProducts.filter(p => {
+    const { sub } = classifyProduct(p);
+    return sub === currentFilters.subcategory;
+  });
 }
 
 function renderFilterSidebar() {
   const container = document.getElementById('catalogFilters');
   if (!container) return;
 
-  const brands = [...new Set(pageProducts.map((p) => p.brand).filter(Boolean))].sort();
-  const categories = [...new Set(pageProducts.map((p) => p.category).filter(Boolean))].sort();
-  const providers = [...new Set(pageProducts.map((p) => p.providerId || p.provider).filter(Boolean))].sort();
+  const brands = [...new Set(allPageRaw.map(p => p.brand).filter(Boolean))].sort();
+  const providers = [...new Set(allPageRaw.map(p => p.providerId || p.provider).filter(Boolean))].sort();
+  const subcategoryTree = buildSubcategoryTree(allPageRaw);
 
   container.innerHTML = FilterSidebar({
     mode: 'admin',
     brands,
-    categories,
+    subcategoryTree,
     providers,
     currentFilters,
   });
@@ -207,6 +295,13 @@ function renderFilterSidebar() {
 async function handleFilterChange(filters) {
   currentFilters = filters;
   currentPage = 1;
+  // Si solo cambia subcategoría, no recargar desde API
+  if (filters.subcategory !== undefined && pageProducts.length > 0) {
+    applySubcategoryFilter();
+    renderProducts();
+    document.getElementById('catalogFilters')?.classList.remove('show');
+    return;
+  }
   await refreshProducts();
   document.getElementById('catalogFilters')?.classList.remove('show');
 }
@@ -214,17 +309,16 @@ async function handleFilterChange(filters) {
 async function handleClearFilters() {
   currentFilters = {};
   currentPage = 1;
+  displayedProducts = [];
   await refreshProducts();
 }
 
 async function refreshProducts() {
   setFiltersToURL({ ...currentFilters, page: currentPage, pageSize: itemsPerPage, sort: currentSort });
   await loadProducts();
+  applySubcategoryFilter();
   renderFilterSidebar();
-  wireFilterSidebar({
-    onFilterChange: handleFilterChange,
-    onClearFilters: handleClearFilters,
-  });
+  wireFilterSidebar({ onFilterChange: handleFilterChange, onClearFilters: handleClearFilters });
   renderProducts();
 }
 
@@ -233,13 +327,11 @@ function buildQuery() {
   params.set('page', String(currentPage));
   params.set('pageSize', String(itemsPerPage));
   params.set('sort', currentSort);
-
   if (currentFilters.search) params.set('q', currentFilters.search);
   if (currentFilters.brand) params.set('brand', currentFilters.brand);
   if (currentFilters.category) params.set('category', currentFilters.category);
   if (currentFilters.provider) params.set('provider', currentFilters.provider);
   if (currentFilters.inStock) params.set('inStock', '1');
-
   return params.toString();
 }
 
@@ -254,7 +346,8 @@ async function loadProducts() {
     if (!res.ok || !data.ok) throw new Error(data?.error || 'API error');
 
     const items = Array.isArray(data.items) ? data.items : [];
-    pageProducts = items.map((p) => enrichProduct(p));
+    allPageRaw = items;
+    pageProducts = items.map(p => enrichProduct(p));
 
     const pagination = data.pagination || {};
     const hasServerPagination = Number.isFinite(pagination.totalPages) && Number.isFinite(pagination.totalCount);
@@ -269,20 +362,20 @@ async function loadProducts() {
       hasNextPage = pageProducts.length === itemsPerPage;
       totalPages = hasNextPage ? currentPage + 1 : currentPage;
       totalProducts = hasNextPage
-        ? (currentPage * itemsPerPage) + 1
-        : ((currentPage - 1) * itemsPerPage) + pageProducts.length;
-      console.warn('getProducts response without pagination metadata; using fallback pagination mode.');
+        ? currentPage * itemsPerPage + 1
+        : (currentPage - 1) * itemsPerPage + pageProducts.length;
     }
 
     if (totalProducts > 0 && pageProducts.length === 0 && currentPage > totalPages) {
       currentPage = totalPages;
       return loadProducts();
     }
-
     currentPage = Math.min(Math.max(1, currentPage), totalPages);
   } catch (err) {
     console.error('Error loading products:', err);
+    allPageRaw = [];
     pageProducts = [];
+    displayedProducts = [];
     totalProducts = 0;
     totalPages = 1;
     hasNextPage = false;
@@ -295,11 +388,14 @@ function renderProducts() {
   const count = document.getElementById('resultsCount');
   if (!grid) return;
 
+  const toShow = displayedProducts.length > 0 || currentFilters.subcategory ? displayedProducts : pageProducts;
+  const showCount = currentFilters.subcategory ? toShow.length : totalProducts;
+
   if (count) {
-    count.textContent = `${totalProducts} producto${totalProducts !== 1 ? 's' : ''}`;
+    count.textContent = `${showCount} producto${showCount !== 1 ? 's' : ''}${currentFilters.subcategory ? ` en "${currentFilters.subcategory}"` : ''}`;
   }
 
-  if (totalProducts === 0 || pageProducts.length === 0) {
+  if (toShow.length === 0) {
     grid.innerHTML = `
       <div class="emptyState">
         <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -307,32 +403,35 @@ function renderProducts() {
           <path d="m21 21-4.35-4.35"/>
         </svg>
         <h3>No se encontraron productos</h3>
-        <p>Intenta con otros filtros</p>
+        <p>Intentá con otros filtros</p>
         <button class="btn btnPrimary" id="btnClearEmpty">Limpiar filtros</button>
       </div>
     `;
-
     document.getElementById('btnClearEmpty')?.addEventListener('click', handleClearFilters);
     document.getElementById('paginationTop').innerHTML = '';
     document.getElementById('paginationBottom').innerHTML = '';
     return;
   }
 
-  grid.innerHTML = pageProducts
-    .map((p) => ProductCard(p, {
-      mode: 'admin',
-      showAdminActions: true,
-      onEdit: handleEditProduct,
-      onDelete: handleDeleteProduct,
-    }))
-    .join('');
+  grid.innerHTML = toShow.map(p => ProductCard(p, {
+    mode: 'admin',
+    showAdminActions: true,
+    onEdit: handleEditProduct,
+    onDelete: handleDeleteProduct,
+  })).join('');
 
   wireProductCards(grid, {
     onEdit: handleEditProduct,
     onDelete: handleDeleteProduct,
   });
 
-  renderPagination();
+  // Solo mostrar paginación si no hay filtro de subcategoría activo
+  if (!currentFilters.subcategory) {
+    renderPagination();
+  } else {
+    document.getElementById('paginationTop').innerHTML = '';
+    document.getElementById('paginationBottom').innerHTML = '';
+  }
 }
 
 function renderPagination() {
@@ -350,18 +449,18 @@ function renderPagination() {
     <div class="simplePagination">
       <div class="paginationInfo">
         <span>Mostrando <strong>${startItem}-${endItem}</strong> de <strong>${totalProducts}</strong></span>
-        <select class="itemsPerPageSelect" data-pagination-action="page-size" name="itemsPerPage" aria-label="Items por pagina">
-          <option value="30" ${itemsPerPage === 30 ? 'selected' : ''}>30 por pagina</option>
-          <option value="60" ${itemsPerPage === 60 ? 'selected' : ''}>60 por pagina</option>
-          <option value="100" ${itemsPerPage === 100 ? 'selected' : ''}>100 por pagina</option>
-          <option value="200" ${itemsPerPage === 200 ? 'selected' : ''}>200 por pagina</option>
+        <select class="itemsPerPageSelect" data-pagination-action="page-size">
+          <option value="30" ${itemsPerPage === 30 ? 'selected' : ''}>30 por página</option>
+          <option value="60" ${itemsPerPage === 60 ? 'selected' : ''}>60 por página</option>
+          <option value="100" ${itemsPerPage === 100 ? 'selected' : ''}>100 por página</option>
+          <option value="200" ${itemsPerPage === 200 ? 'selected' : ''}>200 por página</option>
         </select>
       </div>
       <div class="paginationControls">
         <button data-pagination-action="page" data-page="${currentPage - 1}" ${!hasPrevPage ? 'disabled' : ''} class="pageBtn">
           ← Anterior
         </button>
-        <span class="pageNumbers">Pagina ${currentPage} de ${totalPages}</span>
+        <span class="pageNumbers">Página ${currentPage} de ${totalPages}</span>
         <button data-pagination-action="page" data-page="${currentPage + 1}" ${!hasNextPage ? 'disabled' : ''} class="pageBtn">
           Siguiente →
         </button>
@@ -376,11 +475,7 @@ function renderPagination() {
 
 async function changeCatalogPage(page, fromBottom = false) {
   if (page < 1 || page > totalPages) return;
-
-  if (fromBottom) {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
-
+  if (fromBottom) window.scrollTo({ top: 0, behavior: 'smooth' });
   currentPage = page;
   await refreshProducts();
 }
@@ -395,25 +490,19 @@ async function changeCatalogItemsPerPage(value) {
 }
 
 function wirePaginationControls() {
-  const top = document.getElementById('paginationTop');
-  const bottom = document.getElementById('paginationBottom');
-
-  [top, bottom].forEach((container) => {
+  [document.getElementById('paginationTop'), document.getElementById('paginationBottom')].forEach(container => {
     if (!container) return;
-
-    container.querySelectorAll('[data-pagination-action="page"]').forEach((btn) => {
-      btn.addEventListener('click', async (event) => {
-        event.preventDefault();
+    container.querySelectorAll('[data-pagination-action="page"]').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.preventDefault();
         const page = Number.parseInt(btn.dataset.page || '', 10);
         if (!Number.isFinite(page)) return;
-        const isBottom = container.id === 'paginationBottom';
-        await changeCatalogPage(page, isBottom);
+        await changeCatalogPage(page, container.id === 'paginationBottom');
       });
     });
-
-    container.querySelectorAll('[data-pagination-action="page-size"]').forEach((select) => {
-      select.addEventListener('change', async (event) => {
-        await changeCatalogItemsPerPage(event.target.value);
+    container.querySelectorAll('[data-pagination-action="page-size"]').forEach(sel => {
+      sel.addEventListener('change', async e => {
+        await changeCatalogItemsPerPage(e.target.value);
       });
     });
   });
@@ -425,16 +514,15 @@ function handleEditProduct(sku) {
 
 async function handleDeleteProduct(sku) {
   try {
+    const token = localStorage.getItem('tt_token');
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
     const res = await fetch(`/api/deleteProduct?sku=${encodeURIComponent(sku)}`, {
       method: 'DELETE',
+      credentials: 'include',
+      headers,
     });
-
     const data = await res.json();
-
-    if (!res.ok || !data.ok) {
-      throw new Error(data.message || 'Error eliminando producto');
-    }
-
+    if (!res.ok || !data.ok) throw new Error(data.message || 'Error eliminando producto');
     await refreshProducts();
     showToast('Producto eliminado');
   } catch (err) {
@@ -443,12 +531,11 @@ async function handleDeleteProduct(sku) {
   }
 }
 
-function showToast(message) {
+function showToast(message, type = 'ok') {
   const toast = document.createElement('div');
-  toast.className = 'toast';
+  toast.className = `toast ${type === 'error' ? 'toastError' : ''}`;
   toast.textContent = message;
   document.body.appendChild(toast);
-
   setTimeout(() => toast.classList.add('show'), 10);
   setTimeout(() => {
     toast.classList.remove('show');

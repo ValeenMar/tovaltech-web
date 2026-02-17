@@ -1,5 +1,6 @@
 const { app } = require("@azure/functions");
 const { TableClient } = require("@azure/data-tables");
+const { requireAdmin } = require("../lib/auth");
 
 function getClient() {
   const conn = process.env.STORAGE_CONNECTION_STRING;
@@ -89,6 +90,87 @@ app.http("product", {
         jsonBody: { ok: true, item: picked },
       };
     } catch (err) {
+      return { status: 500, jsonBody: { ok: false, error: String(err?.message || err) } };
+    }
+  },
+});
+
+// ---- PATCH: editar campos de un producto (solo admin) ----
+app.http("productUpdate", {
+  methods: ["PATCH"],
+  authLevel: "anonymous",
+  route: "productUpdate",
+  handler: async (request, context) => {
+    const user = requireAdmin(request);
+    if (!user) {
+      return { status: 401, jsonBody: { ok: false, error: "No autorizado" } };
+    }
+
+    const sku = String(request.query.get("sku") || "").trim();
+    if (!sku) {
+      return { status: 400, jsonBody: { ok: false, error: "sku requerido" } };
+    }
+
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return { status: 400, jsonBody: { ok: false, error: "JSON inválido" } };
+    }
+
+    // Campos que el admin puede editar
+    const ALLOWED = ["name", "brand", "category", "price", "currency", "ivaRate", "stock", "imageUrl", "marginOverride", "description"];
+    const updates = {};
+    for (const field of ALLOWED) {
+      if (body[field] !== undefined) {
+        updates[field] = body[field];
+      }
+    }
+
+    // marginOverride: null = usar global, número = override
+    if ("marginOverride" in updates) {
+      const mo = parseFloat(updates.marginOverride);
+      updates.marginOverride = Number.isFinite(mo) && mo >= 0 ? mo : null;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return { status: 400, jsonBody: { ok: false, error: "Sin campos para actualizar" } };
+    }
+
+    try {
+      const client = getClient();
+      const iter = client.listEntities({
+        queryOptions: { filter: `RowKey eq '${sku.replace(/'/g, "''")}'` },
+      });
+
+      let entityPK = null;
+      for await (const e of iter) {
+        entityPK = e.partitionKey;
+        break;
+      }
+
+      if (!entityPK) {
+        return { status: 404, jsonBody: { ok: false, error: "Producto no encontrado" } };
+      }
+
+      await client.upsertEntity(
+        {
+          partitionKey: entityPK,
+          rowKey: sku,
+          ...updates,
+          updatedAt: new Date().toISOString(),
+          updatedBy: user.email || "admin",
+        },
+        "Merge"
+      );
+
+      context.log(`✅ Producto actualizado: ${sku} por ${user.email}`);
+      return {
+        status: 200,
+        jsonBody: { ok: true, sku, updated: Object.keys(updates) },
+      };
+    } catch (err) {
+      context.error("Error actualizando producto:", err);
       return { status: 500, jsonBody: { ok: false, error: String(err?.message || err) } };
     }
   },

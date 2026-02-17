@@ -96,7 +96,58 @@ export async function getFxUsdArs() {
 }
 
 /**
- * Obtiene margen desde localStorage o default
+ * Obtiene margen desde la API (compartido entre todos los admins).
+ * Fallback a localStorage, luego a 15%.
+ */
+export async function getMarginFromApi() {
+  try {
+    const res = await fetch('/api/settings', { cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      if (typeof data.marginPct === 'number') {
+        localStorage.setItem('toval_margin_pct', String(data.marginPct));
+        return data.marginPct;
+      }
+    }
+  } catch (err) {
+    console.warn('Error fetching margin from API, using local fallback:', err);
+  }
+  return getMargin();
+}
+
+/**
+ * Guarda margen en la API y en localStorage.
+ */
+export async function saveMarginToApi(value, token) {
+  const n = parseFloat(value);
+  if (!Number.isFinite(n) || n < 0) return null;
+
+  // Guardar local de todas formas
+  localStorage.setItem('toval_margin_pct', String(n));
+
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      credentials: 'include',
+      headers,
+      body: JSON.stringify({ marginPct: n }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      return data.marginPct ?? n;
+    }
+  } catch (err) {
+    console.error('Error saving margin to API:', err);
+  }
+  return n;
+}
+
+/**
+ * Obtiene margen desde localStorage o default (sincrónico, fallback)
  */
 export function getMargin() {
   try {
