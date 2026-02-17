@@ -19,16 +19,14 @@ export async function wireProductDetail(sku, isAdminView = false) {
   if (!container) return;
 
   try {
-    // Obtener producto del API
-    const res = await fetch(`/api/getProducts?limit=5000`);
+    const res = await fetch(`/api/product?sku=${encodeURIComponent(sku)}`);
     const data = await res.json();
     
     if (!res.ok || !data.ok) {
-      throw new Error('Error al cargar productos');
+      throw new Error('Error al cargar producto');
     }
 
-    const products = Array.isArray(data.items) ? data.items : [];
-    const product = products.find(p => p.sku === sku || encodeURIComponent(p.sku) === sku);
+    const product = data.item || null;
 
     if (!product) {
       container.innerHTML = `

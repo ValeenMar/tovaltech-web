@@ -1,4 +1,5 @@
 const { app } = require("@azure/functions");
+const { requireAdmin } = require("../lib/auth");
 
 function preview(v) {
   if (!v) return null;
@@ -10,6 +11,11 @@ app.http("authdebug", {
   methods: ["GET"],
   authLevel: "anonymous",
   handler: async (request) => {
+    const admin = requireAdmin(request);
+    if (!admin) {
+      return { status: 403, jsonBody: { ok: false, error: "Forbidden" } };
+    }
+
     const auth = request.headers.get("authorization") || request.headers.get("Authorization");
     const custom =
       request.headers.get("x-tovaltech-token") ||

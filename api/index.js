@@ -7,8 +7,11 @@ const { app } = require("@azure/functions");
 app.setup({ enableHttpStream: true });
 
 require("./functions/login");
+require("./functions/logout");
+require("./functions/me");
 require("./functions/chat");
 require("./functions/getProducts");
+require("./functions/product");
 require("./functions/getProviders");
 require("./functions/providersElitImport");
 require("./functions/health");

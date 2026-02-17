@@ -408,7 +408,10 @@ app.http("getProducts", {
 
       return {
         status: 200,
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "Cache-Control": "public, max-age=60",
+        },
         body: JSON.stringify({
           ok: true,
           items: paginatedItems,

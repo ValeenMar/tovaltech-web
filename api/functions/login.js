@@ -6,14 +6,50 @@
 const { app } = require("@azure/functions");
 const { TableClient } = require("@azure/data-tables");
 const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
 const Joi = require("joi");
+const { makeJwt, buildSessionCookie } = require("../lib/auth");
 
 // Validación de input con Joi
 const loginSchema = Joi.object({
   email: Joi.string().email().required().trim().lowercase(),
   password: Joi.string().min(4).required(), // Min 4 por ahora, cambiar a 8+ en producción
 });
+
+const LOGIN_ATTEMPTS = new Map();
+const LOGIN_WINDOW_MS = 10 * 60 * 1000;
+const LOGIN_MAX_FAILS = 8;
+
+function getClientIp(request) {
+  const xff = request.headers.get("x-forwarded-for") || "";
+  const first = xff.split(",")[0].trim();
+  return first || request.headers.get("x-client-ip") || "unknown";
+}
+
+function isRateLimited(key) {
+  const now = Date.now();
+  const rec = LOGIN_ATTEMPTS.get(key);
+  if (!rec) return false;
+  if (now - rec.at > LOGIN_WINDOW_MS) {
+    LOGIN_ATTEMPTS.delete(key);
+    return false;
+  }
+  return rec.fails >= LOGIN_MAX_FAILS;
+}
+
+function markFail(key) {
+  const now = Date.now();
+  const rec = LOGIN_ATTEMPTS.get(key);
+  if (!rec || now - rec.at > LOGIN_WINDOW_MS) {
+    LOGIN_ATTEMPTS.set(key, { fails: 1, at: now });
+    return;
+  }
+  rec.fails += 1;
+  rec.at = now;
+}
+
+function clearFails(key) {
+  LOGIN_ATTEMPTS.delete(key);
+}
 
 function getUsersClient() {
   const conn = process.env.STORAGE_CONNECTION_STRING;
@@ -46,6 +82,15 @@ app.http("login", {
       }
 
       const { email, password } = value;
+      const ip = getClientIp(request);
+      const limiterKey = `${ip}|${email}`;
+
+      if (isRateLimited(limiterKey)) {
+        return {
+          status: 429,
+          jsonBody: { success: false, message: "Demasiados intentos. Probá más tarde." },
+        };
+      }
 
       // Buscar usuario en tabla Users (única fuente de verdad)
       const client = getUsersClient();
@@ -67,6 +112,7 @@ app.http("login", {
         const isPasswordValid = await bcrypt.compare(password, userEntity.passwordHash);
 
         if (!isPasswordValid) {
+          markFail(limiterKey);
           context.log("❌ Password incorrecto:", email);
           return {
             status: 401,
@@ -77,17 +123,24 @@ app.http("login", {
           };
         }
 
-        // Generar token JWT seguro
-        const token = generateToken({
+        // Generar token de sesión
+        const token = makeJwt({
           email: userEntity.email || email,
           role: userEntity.role || "customer",
           name: userEntity.name || email.split("@")[0],
         });
 
+        const setCookie = buildSessionCookie(token, request);
+        clearFails(limiterKey);
+
         context.log("✅ Login exitoso:", email, userEntity.role);
 
         return {
           status: 200,
+          headers: {
+            "Set-Cookie": setCookie,
+            "content-type": "application/json",
+          },
           jsonBody: {
             success: true,
             token,
@@ -102,6 +155,7 @@ app.http("login", {
       } catch (err) {
         // Usuario no encontrado
         if (err.statusCode === 404) {
+          markFail(limiterKey);
           context.log("❌ Usuario no encontrado:", email);
           return {
             status: 401,
@@ -129,23 +183,3 @@ app.http("login", {
     }
   },
 });
-
-/**
- * Genera un token JWT seguro usando jsonwebtoken
- */
-function generateToken(payload) {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    throw new Error("Missing JWT_SECRET");
-  }
-
-  // Generar JWT con expiración de 24 horas
-  return jwt.sign(
-    payload,
-    secret,
-    {
-      expiresIn: "24h",
-      algorithm: "HS256",
-    }
-  );
-}

@@ -1,30 +1,30 @@
 // File: /api/lib/auth.js
-// Auth helper for Azure Functions (SWA-friendly).
-// Reads token from: x-tovaltech-token / x-tt-token / x-auth-token / Authorization: Bearer <token>
+// Auth helpers con JWT + cookie HttpOnly.
 
-const crypto = require("crypto");
+const jwt = require("jsonwebtoken");
+
+const SESSION_COOKIE = "tt_session";
 
 function stripQuotes(s) {
   const v = String(s || "").trim();
   return v.replace(/^"+|"+$/g, "");
 }
 
-function decodeBase64Url(str) {
-  let base64 = String(str || "").replace(/-/g, "+").replace(/_/g, "/");
-  const pad = base64.length % 4;
-  if (pad) {
-    if (pad === 1) throw new Error("Invalid base64url string");
-    base64 += "=".repeat(4 - pad);
-  }
-  return Buffer.from(base64, "base64").toString("utf-8");
-}
+function parseCookies(request) {
+  const header = request.headers.get("cookie") || "";
+  const out = {};
+  if (!header) return out;
 
-function encodeBase64Url(str) {
-  return Buffer.from(String(str), "utf-8")
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=/g, "");
+  header.split(";").forEach((part) => {
+    const idx = part.indexOf("=");
+    if (idx < 0) return;
+    const key = part.slice(0, idx).trim();
+    const value = part.slice(idx + 1).trim();
+    if (!key) return;
+    out[key] = decodeURIComponent(value);
+  });
+
+  return out;
 }
 
 function getTokenFromRequest(request) {
@@ -37,55 +37,12 @@ function getTokenFromRequest(request) {
 
   const authHeader =
     request.headers.get("authorization") || request.headers.get("Authorization");
-  if (!authHeader) return null;
-
-  return stripQuotes(String(authHeader).replace(/^Bearer\s+/i, ""));
-}
-
-function signJwtHS256(headerB64, payloadB64, secret) {
-  // signature = base64url( HMACSHA256( header.payload, secret ) )
-  return crypto
-    .createHmac("sha256", secret)
-    .update(`${headerB64}.${payloadB64}`)
-    .digest("base64url");
-}
-
-function verifyJwt(token, secret) {
-  if (!token) return null;
-
-  const parts = String(token).split(".");
-  if (parts.length !== 3) return null;
-
-  const [h, p, sig] = parts;
-
-  // Try strict HS256 first
-  try {
-    const expected = signJwtHS256(h, p, secret);
-    if (sig === expected) {
-      const payload = JSON.parse(decodeBase64Url(p));
-      if (!payload || typeof payload !== "object") return null;
-
-      // exp is milliseconds epoch
-      if (payload.exp && Number(payload.exp) < Date.now()) return null;
-
-      return payload;
-    }
-  } catch {
-    // continue to legacy
+  if (authHeader) {
+    return stripQuotes(String(authHeader).replace(/^Bearer\s+/i, ""));
   }
 
-  // Legacy fallback (older builds): signature was base64url("h.p.SECRET")
-  try {
-    const legacyExpected = encodeBase64Url(`${h}.${p}.${secret}`);
-    if (sig === legacyExpected) {
-      const payload = JSON.parse(decodeBase64Url(p));
-      if (!payload || typeof payload !== "object") return null;
-      if (payload.exp && Number(payload.exp) < Date.now()) return null;
-      return payload;
-    }
-  } catch {
-    // ignore
-  }
+  const cookies = parseCookies(request);
+  if (cookies[SESSION_COOKIE]) return stripQuotes(cookies[SESSION_COOKIE]);
 
   return null;
 }
@@ -94,12 +51,20 @@ function getAuthSecret() {
   return process.env.JWT_SECRET || process.env.AUTH_JWT_SECRET || null;
 }
 
+function verifyJwt(token, secret) {
+  if (!token || !secret) return null;
+  try {
+    return jwt.verify(token, secret, { algorithms: ["HS256"] });
+  } catch {
+    return null;
+  }
+}
+
 function requireUser(request) {
   const token = getTokenFromRequest(request);
   const secret = getAuthSecret();
   if (!secret) return null;
-  const payload = verifyJwt(token, secret);
-  return payload;
+  return verifyJwt(token, secret);
 }
 
 function requireAdmin(request) {
@@ -111,24 +76,29 @@ function requireAdmin(request) {
 
 function makeJwt(payload) {
   const secret = getAuthSecret();
-  const header = { alg: "HS256", typ: "JWT" };
-  const data = {
-    ...payload,
-    iat: Date.now(),
-    exp: Date.now() + 24 * 60 * 60 * 1000, // 24h
-  };
+  if (!secret) throw new Error("Missing JWT_SECRET");
+  return jwt.sign(payload, secret, { algorithm: "HS256", expiresIn: "24h" });
+}
 
-  const h = encodeBase64Url(JSON.stringify(header));
-  const p = encodeBase64Url(JSON.stringify(data));
-  const sig = signJwtHS256(h, p, secret);
+function buildSessionCookie(token, request) {
+  const maxAge = 24 * 60 * 60;
+  const isHttps = String(request.url || "").startsWith("https://") || process.env.NODE_ENV === "production";
+  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${isHttps ? "; Secure" : ""}`;
+}
 
-  return `${h}.${p}.${sig}`;
+function clearSessionCookie(request) {
+  const isHttps = String(request.url || "").startsWith("https://") || process.env.NODE_ENV === "production";
+  return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${isHttps ? "; Secure" : ""}`;
 }
 
 module.exports = {
+  SESSION_COOKIE,
+  parseCookies,
   getTokenFromRequest,
   verifyJwt,
   requireUser,
   requireAdmin,
   makeJwt,
+  buildSessionCookie,
+  clearSessionCookie,
 };

@@ -3,7 +3,6 @@
  * Solo accesible por admins
  */
 
-import { AUTH_KEY } from "../config.js";
 import { wirePasswordToggles } from "../utils/passwordToggle.js";
 
 export function SettingsPage() {
@@ -165,32 +164,6 @@ export function wireSettings() {
     saveUserBtn.textContent = "Guardando...";
 
     try {
-      // Intentar obtener el token de localStorage
-      let token = localStorage.getItem(AUTH_KEY);
-
-      // DEBUGGING: Ver si el token existe
-      // Token check removed for security
-
-      // Fallback: intentar con la key hardcoded por si AUTH_KEY está mal
-      if (!token) {
-        console.warn('⚠️ No hay token con AUTH_KEY, intentando con "tovaltech_auth"');
-        token = localStorage.getItem('tovaltech_auth');
-      }
-
-      // Si sigue sin token, intentar con _v1
-      if (!token) {
-        console.warn('⚠️ Intentando con "tovaltech_auth_v1"');
-        token = localStorage.getItem('tovaltech_auth_v1');
-      }
-
-      if (!token) {
-        modalError.textContent = "No hay token de autenticación. Por favor cerrá sesión y volvé a entrar.";
-        console.error('❌ No se encontró token en ninguna key');
-        return;
-      }
-
-      // Token found
-
       const method = editingEmail ? "PUT" : "POST";
       const url = editingEmail
         ? `/api/users/${encodeURIComponent(editingEmail)}`
@@ -205,9 +178,8 @@ export function wireSettings() {
         method,
         headers: {
           "Content-Type": "application/json",
-          "x-tovaltech-token": token,
-          Authorization: `Bearer ${token}`,
         },
+        credentials: "include",
 
 
         body: JSON.stringify(body),
@@ -241,26 +213,8 @@ export function wireSettings() {
     usersList.innerHTML = '<div class="loading">Cargando usuarios...</div>';
 
     try {
-      // Intentar obtener el token con fallback
-      let token = localStorage.getItem(AUTH_KEY);
-      if (!token) token = localStorage.getItem('tovaltech_auth');
-      if (!token) token = localStorage.getItem('tovaltech_auth_v1');
-
-      if (!token) {
-        usersList.innerHTML = `
-          <div class="emptyState">
-            No estás autenticado. 
-            <a href="/login" data-link style="color: var(--accent);">Ir a Login</a>
-          </div>
-        `;
-        return;
-      }
-
       const res = await fetch("/api/users", {
-        headers: {
-          "x-tovaltech-token": token,
-          Authorization: `Bearer ${token}`,
-        },
+        credentials: "include",
       });
 
       const data = await res.json();
@@ -375,16 +329,9 @@ export function wireSettings() {
     if (!confirm(`¿Eliminar usuario ${email}?`)) return;
 
     try {
-      let token = localStorage.getItem(AUTH_KEY);
-      if (!token) token = localStorage.getItem('tovaltech_auth');
-      if (!token) token = localStorage.getItem('tovaltech_auth_v1');
-
       const res = await fetch(`/api/users/${encodeURIComponent(email)}`, {
         method: "DELETE",
-        headers: {
-          "x-tovaltech-token": token,
-          Authorization: `Bearer ${token}`,
-        },
+        credentials: "include",
       });
 
       const data = await res.json();

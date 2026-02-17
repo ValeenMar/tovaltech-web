@@ -75,27 +75,24 @@ export async function wireLogin() {
       const res = await fetch("/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ email, password })
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "Error al iniciar sesión");
+        throw new Error(data.error || data.message || "Error al iniciar sesión");
       }
 
-      // Save token
-      if (data.token) {
-        localStorage.setItem("toval_token", data.token);
-        
-        // Redirect based on role with full page reload to update UI
-        if (data.user && data.user.role === "admin") {
+      if (data.user) {
+        if (data.user.role === "admin") {
           window.location.href = "/catalogo";
         } else {
           window.location.href = "/tienda";
         }
       } else {
-        throw new Error("No se recibió token de autenticación");
+        throw new Error("No se recibió usuario autenticado");
       }
 
     } catch (err) {

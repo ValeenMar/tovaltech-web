@@ -287,8 +287,12 @@ function mutateCartItem(action, idx) {
   renderCartDrawer();
 }
 
-function logout() {
-  localStorage.removeItem('toval_token');
+async function logout() {
+  try {
+    await fetch('/api/logout', { method: 'POST', credentials: 'include' });
+  } catch {
+    // ignore
+  }
   window.location.href = '/';
 }
 
@@ -296,44 +300,33 @@ async function updateUserMenu() {
   const userMenu = document.getElementById('userMenu');
   if (!userMenu) return;
 
-  const token = localStorage.getItem('toval_token');
-
-  if (!token) {
-    userMenu.innerHTML = '<a href="/login" data-link class="btn btnPrimary">Ingresar</a>';
-    return;
-  }
-
   let displayName = null;
+  let role = null;
 
   try {
     const res = await fetch('/api/me', {
-      headers: { Authorization: `Bearer ${token}` },
+      credentials: 'include',
     });
 
     if (res.ok) {
       const data = await res.json();
       const user = data?.user || {};
       displayName = user.name || user.email || null;
+      role = user.role || null;
     }
   } catch {
-    // ignore and fallback to token decode
+    // ignore
   }
 
   if (!displayName) {
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      displayName = payload.name || payload.email || payload.sub || null;
-    } catch {
-      localStorage.removeItem('toval_token');
-      userMenu.innerHTML = '<a href="/login" data-link class="btn btnPrimary">Ingresar</a>';
-      return;
-    }
+    userMenu.innerHTML = '<a href="/login" data-link class="btn btnPrimary">Ingresar</a>';
+    return;
   }
 
   userMenu.innerHTML = `
     <div style="display: flex; align-items: center; gap: 12px;">
       <span style="font-size: 14px; color: var(--text-secondary);">
-        ${esc(displayName || 'Usuario')}
+        ${esc(displayName || 'Usuario')}${role === 'admin' ? ' (Admin)' : ''}
       </span>
       <button class="btn btnSecondary" data-logout>Salir</button>
     </div>

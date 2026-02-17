@@ -31,6 +31,19 @@ const routes = [
   { path: '/login', view: LoginPage, wire: wireLogin, auth: false },
   { path: '/contacto', view: ContactoPage, wire: wireContacto, auth: false },
   { path: '/carrito', view: CarritoPage, wire: wireCarrito, auth: false },
+  {
+    path: '/logout',
+    view: () => '<div class="page"><p>Cerrando sesión...</p></div>',
+    wire: async () => {
+      try {
+        await fetch('/api/logout', { method: 'POST', credentials: 'include' });
+      } catch {
+        // ignore
+      }
+      window.location.href = '/login';
+    },
+    auth: false,
+  },
   
   // Rutas con parámetros
   { 
@@ -121,41 +134,14 @@ async function router() {
 
 async function loadCurrentUser() {
   try {
-    const token = localStorage.getItem('toval_token');
-    if (!token) {
+    const res = await fetch('/api/me', { credentials: 'include' });
+    if (!res.ok) {
       currentUser = null;
       return;
     }
-    
-    // Try to fetch user info, but don't fail if endpoint doesn't exist
-    try {
-      const res = await fetch('/api/me', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      if (res.ok) {
-        const data = await res.json();
-        currentUser = data.user;
-        return;
-      }
-    } catch (apiErr) {
-      // /api/me might not exist, that's OK
-      console.log('API /me not available, using token payload');
-    }
-    
-    // Fallback: decode token to get user info
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      currentUser = {
-        email: payload.email || payload.sub,
-        role: payload.role || 'customer',
-        name: payload.name || payload.email
-      };
-    } catch (decodeErr) {
-      // Token invalid
-      currentUser = null;
-      localStorage.removeItem('toval_token');
-    }
+
+    const data = await res.json();
+    currentUser = data?.user || null;
     
   } catch (err) {
     console.error('Error loading user:', err);

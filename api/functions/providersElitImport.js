@@ -11,6 +11,16 @@
 
 const { app } = require("@azure/functions");
 const { TableClient } = require("@azure/data-tables");
+const { requireAdmin: requireAdminUser } = require("../lib/auth");
+
+const IMPORT_COOLDOWN_MS = 20 * 1000;
+const IMPORT_LAST_RUN = new Map();
+
+function getClientIp(request) {
+  const xff = request.headers.get("x-forwarded-for") || "";
+  const first = xff.split(",")[0].trim();
+  return first || request.headers.get("x-client-ip") || "unknown";
+}
 
 function getProductsClient() {
   const conn = process.env.STORAGE_CONNECTION_STRING;
@@ -66,8 +76,15 @@ function clamp(n, min, max) {
 }
 
 function requireAdmin(request) {
+  const admin = requireAdminUser(request);
+  if (admin) return;
+
   const expected = process.env.APP_PASSWORD;
-  if (!expected) throw new Error("Missing APP_PASSWORD env");
+  if (!expected) {
+    const err = new Error("Forbidden");
+    err.status = 403;
+    throw err;
+  }
 
   const headerPass =
     request.headers.get("x-app-password") ||
@@ -254,6 +271,20 @@ app.http("providersElitImport", {
   handler: async (request, context) => {
     try {
       requireAdmin(request);
+
+      const ip = getClientIp(request);
+      const now = Date.now();
+      const last = IMPORT_LAST_RUN.get(ip) || 0;
+      if (now - last < IMPORT_COOLDOWN_MS) {
+        return {
+          status: 429,
+          jsonBody: {
+            ok: false,
+            error: "Import en cooldown. Reintentá en unos segundos.",
+          },
+        };
+      }
+      IMPORT_LAST_RUN.set(ip, now);
 
       const source = (request.query.get("source") || "json").trim().toLowerCase();
       const productsClient = getProductsClient();
