@@ -1,24 +1,19 @@
 /**
- * Login endpoint con validación contra tabla Users
- * Prioridad: Users table > dominios autorizados > hardcoded
+ * Login endpoint con validación segura contra tabla Users
+ * Usa bcrypt para hashing de contraseñas y JWT real para tokens
  */
 
 const { app } = require("@azure/functions");
 const { TableClient } = require("@azure/data-tables");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+const Joi = require("joi");
 
-// Usuarios hardcoded (solo como fallback legacy)
-const FALLBACK_USERS = [
-  {
-    email: "vendor@ejemplo.com",
-    password: "Milanesa",
-    name: "Vendedor Demo",
-    role: "vendor",
-  },
-];
-
-// Dominios que tienen acceso admin automático (legacy)
-const ADMIN_DOMAINS = ["toval-tech.com"];
-const ADMIN_DEFAULT_PASSWORD = "Milanesa";
+// Validación de input con Joi
+const loginSchema = Joi.object({
+  email: Joi.string().email().required().trim().lowercase(),
+  password: Joi.string().min(4).required(), // Min 4 por ahora, cambiar a 8+ en producción
+});
 
 function getUsersClient() {
   const conn = process.env.STORAGE_CONNECTION_STRING;
@@ -36,71 +31,43 @@ app.http("login", {
   handler: async (request, context) => {
     try {
       const body = await request.json();
-      const { email, password } = body;
 
-      if (!email || !password) {
+      // Validar input con Joi
+      const { error, value } = loginSchema.validate(body);
+      if (error) {
+        context.log("❌ Validación fallida:", error.details[0].message);
         return {
           status: 400,
           jsonBody: {
             success: false,
-            message: "Email y password requeridos",
+            message: error.details[0].message,
           },
         };
       }
 
-      const emailLower = email.toLowerCase().trim();
-      const domain = emailLower.split("@")[1];
+      const { email, password } = value;
 
-      // PRIORIDAD 1: Buscar en tabla Users
+      // Buscar usuario en tabla Users (única fuente de verdad)
       const client = getUsersClient();
-      if (client) {
-        try {
-          const userEntity = await client.getEntity("user", emailLower);
-          
-          // Verificar password (TODO: bcrypt en producción)
-          if (userEntity.password === password) {
-            const token = generateToken({
-              email: userEntity.email || emailLower,
-              role: userEntity.role || "customer",
-              name: userEntity.name || emailLower.split("@")[0],
-            });
-
-            context.log("✅ Login exitoso (Users table):", emailLower, userEntity.role);
-
-            return {
-              status: 200,
-              jsonBody: {
-                success: true,
-                token,
-                user: {
-                  email: userEntity.email || emailLower,
-                  name: userEntity.name || emailLower.split("@")[0],
-                  role: userEntity.role || "customer",
-                },
-              },
-            };
-          } else {
-            context.log("❌ Password incorrecto (Users table):", emailLower);
-            return {
-              status: 401,
-              jsonBody: {
-                success: false,
-                message: "Credenciales inválidas",
-              },
-            };
-          }
-        } catch (err) {
-          // Si no existe en tabla Users, seguir con fallbacks
-          if (err.statusCode !== 404) {
-            context.error("Error al buscar usuario:", err);
-          }
-        }
+      if (!client) {
+        context.error("❌ No se pudo conectar a la tabla Users");
+        return {
+          status: 500,
+          jsonBody: {
+            success: false,
+            message: "Error de configuración del servidor",
+          },
+        };
       }
 
-      // PRIORIDAD 2: Dominio admin (legacy - solo si no está en Users table)
-      if (ADMIN_DOMAINS.includes(domain)) {
-        if (password !== ADMIN_DEFAULT_PASSWORD) {
-          context.log("❌ Login fallido (admin legacy):", emailLower);
+      try {
+        const userEntity = await client.getEntity("user", email);
+
+        // Verificar password con bcrypt
+        const isPasswordValid = await bcrypt.compare(password, userEntity.passwordHash);
+
+        if (!isPasswordValid) {
+          context.log("❌ Password incorrecto:", email);
           return {
             status: 401,
             jsonBody: {
@@ -110,16 +77,14 @@ app.http("login", {
           };
         }
 
-        const userName = emailLower.split("@")[0];
-        const displayName = userName.charAt(0).toUpperCase() + userName.slice(1);
-
+        // Generar token JWT seguro
         const token = generateToken({
-          email: emailLower,
-          role: "admin",
-          name: displayName,
+          email: userEntity.email || email,
+          role: userEntity.role || "customer",
+          name: userEntity.name || email.split("@")[0],
         });
 
-        context.log("⚠️ Login exitoso (admin legacy - crear usuario en DB):", emailLower);
+        context.log("✅ Login exitoso:", email, userEntity.role);
 
         return {
           status: 200,
@@ -127,51 +92,31 @@ app.http("login", {
             success: true,
             token,
             user: {
-              email: emailLower,
-              name: displayName,
-              role: "admin",
+              email: userEntity.email || email,
+              name: userEntity.name || email.split("@")[0],
+              role: userEntity.role || "customer",
             },
           },
         };
-      }
 
-      // PRIORIDAD 3: Usuarios hardcoded (legacy)
-      const fallbackUser = FALLBACK_USERS.find(
-        (u) => u.email.toLowerCase() === emailLower
-      );
-
-      if (fallbackUser && fallbackUser.password === password) {
-        const token = generateToken({
-          email: fallbackUser.email,
-          role: fallbackUser.role,
-          name: fallbackUser.name,
-        });
-
-        context.log("⚠️ Login exitoso (fallback - crear usuario en DB):", emailLower);
-
-        return {
-          status: 200,
-          jsonBody: {
-            success: true,
-            token,
-            user: {
-              email: fallbackUser.email,
-              name: fallbackUser.name,
-              role: fallbackUser.role,
+      } catch (err) {
+        // Usuario no encontrado
+        if (err.statusCode === 404) {
+          context.log("❌ Usuario no encontrado:", email);
+          return {
+            status: 401,
+            jsonBody: {
+              success: false,
+              message: "Credenciales inválidas",
             },
-          },
-        };
+          };
+        }
+
+        // Otro error
+        context.error("Error al buscar usuario:", err);
+        throw err;
       }
 
-      // Usuario no autorizado
-      context.log("❌ Login fallido (unauthorized):", emailLower);
-      return {
-        status: 401,
-        jsonBody: {
-          success: false,
-          message: "Usuario no autorizado. Contactá a un administrador.",
-        },
-      };
     } catch (error) {
       context.error("💥 Error en login:", error);
       return {
@@ -186,39 +131,18 @@ app.http("login", {
 });
 
 /**
- * Genera un token JWT compatible con extractUser()
+ * Genera un token JWT seguro usando jsonwebtoken
  */
 function generateToken(payload) {
-  const header = {
-    alg: "HS256",
-    typ: "JWT",
-  };
+  const secret = process.env.JWT_SECRET || "tovaltech-secret-change-in-production";
 
-  const data = {
-    ...payload,
-    exp: Date.now() + 24 * 60 * 60 * 1000, // 24 horas
-    iat: Date.now(),
-  };
-
-  // Codificar como base64url (compatible con Buffer.from en users.js)
-  const headerB64 = base64UrlEncode(JSON.stringify(header));
-  const payloadB64 = base64UrlEncode(JSON.stringify(data));
-
-  // Firma simple
-  const signature = base64UrlEncode(
-    `${headerB64}.${payloadB64}.${process.env.JWT_SECRET || "tovaltech-secret-2025"}`
+  // Generar JWT con expiración de 24 horas
+  return jwt.sign(
+    payload,
+    secret,
+    {
+      expiresIn: "24h",
+      algorithm: "HS256",
+    }
   );
-
-  return `${headerB64}.${payloadB64}.${signature}`;
-}
-
-/**
- * Helper: codifica a base64url
- */
-function base64UrlEncode(str) {
-  const b64 = Buffer.from(str).toString("base64");
-  return b64
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=/g, "");
 }

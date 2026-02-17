@@ -4,6 +4,10 @@
  */
 const { app } = require("@azure/functions");
 const { TableClient } = require("@azure/data-tables");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+
+const SALT_ROUNDS = 10;
 
 function getUsersClient() {
   const conn = process.env.STORAGE_CONNECTION_STRING;
@@ -11,75 +15,10 @@ function getUsersClient() {
   return TableClient.fromConnectionString(conn, "Users");
 }
 
-function decodeBase64Url(str) {
-  let base64 = String(str || "").replace(/-/g, "+").replace(/_/g, "/");
-  const pad = base64.length % 4;
-  if (pad) {
-    if (pad === 1) throw new Error("Invalid base64url string");
-    base64 += "=".repeat(4 - pad);
-  }
-  return Buffer.from(base64, "base64").toString("utf-8");
-}
-
 function stripQuotes(s) {
   const v = String(s || "").trim();
   return v.replace(/^"+|"+$/g, "");
 }
-
-/** Verifica token y extrae usuario */
-function extractUser(request, context) {
-  // 1) Header custom (SWA-friendly)
-  const custom =
-    request.headers.get("x-tovaltech-token") ||
-    request.headers.get("x-tt-token") ||
-    request.headers.get("x-auth-token");
-
-  let token = custom ? stripQuotes(custom) : null;
-
-  // 2) Fallback: Authorization (local u otros hosts)
-  if (!token) {
-    const authHeader =
-      request.headers.get("authorization") || request.headers.get("Authorization");
-    if (!authHeader) {
-      context?.log("No token header (custom/authorization)");
-      return null;
-    }
-    token = stripQuotes(authHeader.replace(/^Bearer\s+/i, ""));
-  }
-
-  if (!token) {
-    context?.log("Empty token");
-    return null;
-  }
-
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) {
-      context?.log("Invalid token format - expected 3 parts, got", parts.length);
-      return null;
-    }
-
-    const payloadJson = decodeBase64Url(parts[1]);
-    const payload = JSON.parse(payloadJson);
-
-    context?.log("Token decoded successfully:", {
-      email: payload.email,
-      role: payload.role,
-      exp: payload.exp
-    });
-
-    if (payload.exp && Date.now() > payload.exp) {
-      context?.log("Token expired");
-      return null;
-    }
-
-    return payload;
-  } catch (err) {
-    context?.error("Error decodificando token:", err.message);
-    return null;
-  }
-}
-
 
 /**
  * SWA puede ignorar/sobrescribir Authorization.
@@ -114,28 +53,33 @@ function getTokenFromRequest(request, context) {
   return null;
 }
 
+/** Verifica token JWT y extrae usuario con verificación criptográfica */
 function extractUser(request, context) {
   const token = getTokenFromRequest(request, context);
   if (!token) return null;
 
   try {
-    const parts = token.split(".");
-    if (parts.length !== 3) {
-      context?.log?.("Invalid token format - expected 3 parts, got", parts.length);
-      return null;
-    }
+    const secret = process.env.JWT_SECRET || "tovaltech-secret-change-in-production";
 
-    const payloadJson = decodeBase64Url(parts[1]);
-    const payload = JSON.parse(payloadJson);
+    // Verificar JWT con librería (verifica firma criptográfica)
+    const payload = jwt.verify(token, secret, {
+      algorithms: ["HS256"],
+    });
 
-    if (payload.exp && Date.now() > payload.exp) {
-      context?.log?.("Token expired");
-      return null;
-    }
+    context?.log?.("Token verified successfully:", {
+      email: payload.email,
+      role: payload.role,
+    });
 
     return payload;
   } catch (err) {
-    context?.error?.("Error decodificando token:", err?.message || err);
+    if (err.name === "TokenExpiredError") {
+      context?.log?.("Token expired");
+    } else if (err.name === "JsonWebTokenError") {
+      context?.error?.("Invalid token:", err.message);
+    } else {
+      context?.error?.("Error verifying token:", err?.message || err);
+    }
     return null;
   }
 }
@@ -262,11 +206,14 @@ app.http("users", {
           if (err.statusCode !== 404) throw err;
         }
 
+        // Hashear password con bcrypt
+        const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+
         const newUser = {
           partitionKey: "user",
           rowKey: emailLower,
           email: emailLower,
-          password, // TODO: bcrypt
+          passwordHash, // ✅ Ahora usa bcrypt
           name: name || emailLower.split("@")[0],
           role: userRole,
           createdAt: new Date().toISOString(),
@@ -300,11 +247,17 @@ app.http("users", {
           throw err;
         }
 
+        // Si se está cambiando password, hashear
+        let passwordHash = existing.passwordHash;
+        if (password !== undefined) {
+          passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+        }
+
         const updated = {
           ...existing,
           name: name !== undefined ? name : existing.name,
           role: role !== undefined ? role : existing.role,
-          password: password !== undefined ? password : existing.password,
+          passwordHash, // ✅ Ahora hasheado
           updatedAt: new Date().toISOString(),
           updatedBy: auth.user.email,
         };

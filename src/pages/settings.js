@@ -167,17 +167,16 @@ export function wireSettings() {
     try {
       // Intentar obtener el token de localStorage
       let token = localStorage.getItem(AUTH_KEY);
-      
+
       // DEBUGGING: Ver si el token existe
-      console.log('🔍 AUTH_KEY:', AUTH_KEY);
-      console.log('🔍 Token desde AUTH_KEY:', token ? 'Existe' : 'NO existe');
-      
+      // Token check removed for security
+
       // Fallback: intentar con la key hardcoded por si AUTH_KEY está mal
       if (!token) {
         console.warn('⚠️ No hay token con AUTH_KEY, intentando con "tovaltech_auth"');
         token = localStorage.getItem('tovaltech_auth');
       }
-      
+
       // Si sigue sin token, intentar con _v1
       if (!token) {
         console.warn('⚠️ Intentando con "tovaltech_auth_v1"');
@@ -190,7 +189,7 @@ export function wireSettings() {
         return;
       }
 
-      console.log('✅ Token encontrado, length:', token.length);
+      // Token found
 
       const method = editingEmail ? "PUT" : "POST";
       const url = editingEmail
@@ -200,17 +199,15 @@ export function wireSettings() {
       const body = { email, name, role };
       if (password) body.password = password;
 
-      console.log('📤 Enviando petición:', method, url);
-      console.log('📦 Body:', body);
-      console.log('🔑 Token preview:', token.substring(0, 50) + '...');
+      // Sending request to API
 
       const res = await fetch(url, {
         method,
         headers: {
-  "Content-Type": "application/json",
-  "x-tovaltech-token": token,
-  Authorization: `Bearer ${token}`,
-},
+          "Content-Type": "application/json",
+          "x-tovaltech-token": token,
+          Authorization: `Bearer ${token}`,
+        },
 
 
         body: JSON.stringify(body),
@@ -248,7 +245,7 @@ export function wireSettings() {
       let token = localStorage.getItem(AUTH_KEY);
       if (!token) token = localStorage.getItem('tovaltech_auth');
       if (!token) token = localStorage.getItem('tovaltech_auth_v1');
-      
+
       if (!token) {
         usersList.innerHTML = `
           <div class="emptyState">
@@ -314,8 +311,8 @@ export function wireSettings() {
     usersList.innerHTML = `
       <div class="usersTable">
         ${users
-          .map(
-            (u) => `
+        .map(
+          (u) => `
           <div class="userRow" data-email="${esc(u.email)}">
             <div class="userInfo">
               <div class="userEmail">${esc(u.email)}</div>
@@ -332,8 +329,8 @@ export function wireSettings() {
             </div>
           </div>
         `
-          )
-          .join("")}
+        )
+        .join("")}
       </div>
     `;
 
@@ -355,7 +352,7 @@ export function wireSettings() {
 
     const name = userRow.querySelector(".userName")?.textContent.trim() || "";
     const roleText = userRow.querySelector(".roleBadge")?.textContent.trim().toLowerCase() || "";
-    
+
     let role = "customer";
     if (roleText.includes("admin")) role = "admin";
     else if (roleText.includes("vendedor")) role = "vendor";

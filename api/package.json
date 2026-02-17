@@ -12,6 +12,9 @@
   "dependencies": {
     "@azure/data-tables": "^13.3.2",
     "@azure/functions": "^4.0.0",
-    "dotenv": "^16.6.1"
+    "bcrypt": "^6.0.0",
+    "dotenv": "^16.6.1",
+    "joi": "^18.0.2",
+    "jsonwebtoken": "^9.0.3"
   }
 }
