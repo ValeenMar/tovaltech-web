@@ -78,7 +78,7 @@ src/pages/catalogo.js    → Paginación + botón carrito
 
 1. **NEWBYTES_TOKEN** (IMPORTANTE)
    ```
-   Valor: c6caafe18ab17302a736431e21c9b5
+   Valor: <tu-token-de-newbytes>
    ```
    Sin este token, New Bytes devolverá 0 items.
 
@@ -139,7 +139,7 @@ git push origin main
 ### New Bytes:
 ```powershell
 $dom = "https://polite-cliff-0828e1f10.4.azurestaticapps.net"
-$pass = "Milanesa"
+$pass = "<tu-app-password>"
 $h = @{ "x-app-password" = $pass }
 
 # Re-importar New Bytes
@@ -152,7 +152,7 @@ Invoke-RestMethod -Uri "$dom/api/providers/newbytes/import?max=1000" -Headers $h
 
 **NEWBYTES_TOKEN debe ser exactamente:**
 ```
-c6caafe18ab17302a736431e21c9b5
+<tu-token-de-newbytes>
 ```
 
 Este es el hash de tu cuenta que viene en la URL del CSV.

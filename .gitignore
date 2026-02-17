@@ -1,6 +1,5 @@
 # Dependencies
 node_modules/
-package-lock.json
 
 # Environment variables
 .env
@@ -27,3 +26,4 @@ npm-debug.log*
 # Azure
 local.settings.json
 .azure/
+azurite_data/

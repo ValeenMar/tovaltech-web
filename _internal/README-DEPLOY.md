@@ -14,7 +14,7 @@ Agregá estas variables (click "+ Nueva configuración de aplicación"):
 
 ```
 JWT_SECRET
-tovaltech-secreto-2026-ultra-seguro-no-compartir
+<generar-un-secreto-fuerte-y-unico>
 
 PRODUCTS_TABLE_NAME
 Products
@@ -29,7 +29,7 @@ USERS_TABLE_NAME
 Users
 
 NEWBYTES_TOKEN
-c6caafe18ab17302a736431e21c9b5
+<tu-token-de-newbytes>
 
 ELIT_USER_ID
 29574
