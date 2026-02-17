@@ -6,14 +6,18 @@
 const crypto = require("crypto");
 const logger = require("../utils/logger");
 
-// JWT casero (sin dependencias). En producción podrías usar 'jsonwebtoken' pero suma peso.
-const JWT_SECRET = process.env.JWT_SECRET || "CAMBIAR-EN-PRODUCCION-" + crypto.randomBytes(32).toString("hex");
+// JWT casero (sin dependencias). Requiere JWT_SECRET configurado.
+const JWT_SECRET = process.env.JWT_SECRET || null;
 const JWT_EXPIRY = 24 * 60 * 60 * 1000; // 24 horas
 
 /**
  * Genera un JWT simple (Header.Payload.Signature)
  */
 function generateToken(payload) {
+  if (!JWT_SECRET) {
+    throw new Error("Missing JWT_SECRET");
+  }
+
   const header = { alg: "HS256", typ: "JWT" };
   const exp = Date.now() + JWT_EXPIRY;
   
@@ -37,6 +41,10 @@ function generateToken(payload) {
  * Verifica y decodifica un JWT
  */
 function verifyToken(token) {
+  if (!JWT_SECRET) {
+    throw new Error("Missing JWT_SECRET");
+  }
+
   if (!token) throw new Error("No token provided");
 
   const parts = token.split(".");

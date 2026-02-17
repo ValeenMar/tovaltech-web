@@ -59,7 +59,11 @@ function extractUser(request, context) {
   if (!token) return null;
 
   try {
-    const secret = process.env.JWT_SECRET || "tovaltech-secret-change-in-production";
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      context?.error?.("Missing JWT_SECRET");
+      return null;
+    }
 
     // Verificar JWT con librería (verifica firma criptográfica)
     const payload = jwt.verify(token, secret, {

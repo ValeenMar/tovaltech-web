@@ -4,6 +4,7 @@
 
 const { app } = require("@azure/functions");
 const { TableClient } = require("@azure/data-tables");
+const { requireAdmin } = require("../lib/auth");
 
 function getClient(tableName) {
   const conn = process.env.STORAGE_CONNECTION_STRING;
@@ -24,10 +25,28 @@ async function canListOne(tableName) {
 app.http("health", {
   methods: ["GET"],
   authLevel: "anonymous",
-  handler: async (_request, context) => {
+  handler: async (request, context) => {
+    const includeDetails = String(request.query.get("details") || "") === "1";
+    if (!includeDetails) {
+      return {
+        status: 200,
+        jsonBody: {
+          ok: true,
+          now: new Date().toISOString(),
+        },
+      };
+    }
+
+    const admin = requireAdmin(request);
+    if (!admin) {
+      return {
+        status: 403,
+        jsonBody: { ok: false, error: "Forbidden" },
+      };
+    }
+
     const env = {
       hasStorageConn: !!process.env.STORAGE_CONNECTION_STRING,
-      hasAppPassword: !!process.env.APP_PASSWORD,
       hasElitUserId: !!process.env.ELIT_USER_ID,
       hasElitToken: !!process.env.ELIT_TOKEN,
       chatTable: process.env.CHAT_TABLE_NAME || "chatlog",

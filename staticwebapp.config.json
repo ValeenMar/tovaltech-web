@@ -19,7 +19,11 @@
     }
   ],
   "globalHeaders": {
-    "cache-control": "must-revalidate, max-age=3600"
+    "cache-control": "must-revalidate, max-age=3600",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+    "Content-Security-Policy-Report-Only": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self'; connect-src 'self' https://api.web3forms.com https://clientes.elit.com.ar https://dolarapi.com;"
   },
   "mimeTypes": {
     ".json": "application/json",

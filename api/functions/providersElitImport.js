@@ -65,12 +65,6 @@ function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
 
-function preview(v) {
-  if (!v) return null;
-  const s = String(v);
-  return s.length > 60 ? s.slice(0, 60) + "..." : s;
-}
-
 function requireAdmin(request) {
   const expected = process.env.APP_PASSWORD;
   if (!expected) throw new Error("Missing APP_PASSWORD env");
@@ -84,9 +78,7 @@ function requireAdmin(request) {
   const auth = request.headers.get("authorization") || request.headers.get("Authorization") || "";
   const bearer = auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : "";
 
-  const queryPass = request.query.get("password") || "";
-
-  const got = headerPass || bearer || queryPass;
+  const got = headerPass || bearer;
   if (!got || String(got).trim() !== String(expected).trim()) {
     const err = new Error("Forbidden");
     err.status = 403;
@@ -412,7 +404,6 @@ app.http("providersElitImport", {
             hasAppPassword: !!process.env.APP_PASSWORD,
             hasElitUserId: !!process.env.ELIT_USER_ID,
             hasElitToken: !!process.env.ELIT_TOKEN,
-            storageConnPreview: preview(process.env.STORAGE_CONNECTION_STRING),
           },
         },
       };

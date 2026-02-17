@@ -1,6 +1,8 @@
 // File: /src/main.js
 // Router principal con separación de vistas cliente/admin
 
+import './bootstrap/uiInit.js';
+
 import { HomePage, wireHome } from './pages/home.js';
 import { TiendaPage, wireTienda } from './pages/tienda.js';
 import { CatalogoPage, wireCatalogo } from './pages/catalogo.js';

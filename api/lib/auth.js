@@ -91,12 +91,14 @@ function verifyJwt(token, secret) {
 }
 
 function getAuthSecret() {
-  return process.env.JWT_SECRET || process.env.AUTH_JWT_SECRET || "tovaltech-secret-2025";
+  return process.env.JWT_SECRET || process.env.AUTH_JWT_SECRET || null;
 }
 
 function requireUser(request) {
   const token = getTokenFromRequest(request);
-  const payload = verifyJwt(token, getAuthSecret());
+  const secret = getAuthSecret();
+  if (!secret) return null;
+  const payload = verifyJwt(token, secret);
   return payload;
 }
 

@@ -1,6 +1,7 @@
 // File: /api/functions/chat.js
 const { app } = require("@azure/functions");
 const { TableClient } = require("@azure/data-tables");
+const { requireAdmin } = require("../lib/auth");
 
 function getClient() {
   const conn = process.env.STORAGE_CONNECTION_STRING;
@@ -14,6 +15,11 @@ app.http("chat", {
   authLevel: "anonymous",
   handler: async (request, context) => {
     try {
+      const admin = requireAdmin(request);
+      if (!admin) {
+        return { status: 403, jsonBody: { ok: false, error: "Forbidden" } };
+      }
+
       const client = getClient();
 
       if (request.method === "GET") {

@@ -15,6 +15,8 @@ let currentPage = 1;
 let itemsPerPage = 60;
 let totalProducts = 0;
 let totalPages = 1;
+let hasNextPage = false;
+let hasPrevPage = false;
 
 export function CatalogoPage() {
   return `
@@ -245,8 +247,22 @@ async function loadProducts() {
     pageProducts = items.map((p) => enrichProduct(p));
 
     const pagination = data.pagination || {};
-    totalProducts = Number.isFinite(pagination.totalCount) ? pagination.totalCount : pageProducts.length;
-    totalPages = Math.max(1, Number.isFinite(pagination.totalPages) ? pagination.totalPages : 1);
+    const hasServerPagination = Number.isFinite(pagination.totalPages) && Number.isFinite(pagination.totalCount);
+
+    if (hasServerPagination) {
+      totalProducts = pagination.totalCount;
+      totalPages = Math.max(1, pagination.totalPages);
+      hasNextPage = Boolean(pagination.hasNextPage);
+      hasPrevPage = Boolean(pagination.hasPrevPage);
+    } else {
+      hasPrevPage = currentPage > 1;
+      hasNextPage = pageProducts.length === itemsPerPage;
+      totalPages = hasNextPage ? currentPage + 1 : currentPage;
+      totalProducts = hasNextPage
+        ? (currentPage * itemsPerPage) + 1
+        : ((currentPage - 1) * itemsPerPage) + pageProducts.length;
+      console.warn('getProducts response without pagination metadata; using fallback pagination mode.');
+    }
 
     if (totalProducts > 0 && pageProducts.length === 0 && currentPage > totalPages) {
       currentPage = totalPages;
@@ -259,6 +275,8 @@ async function loadProducts() {
     pageProducts = [];
     totalProducts = 0;
     totalPages = 1;
+    hasNextPage = false;
+    hasPrevPage = false;
   }
 }
 
@@ -308,7 +326,8 @@ function renderProducts() {
 }
 
 function renderPagination() {
-  if (totalPages <= 1) {
+  const shouldRender = totalPages > 1 || hasNextPage || hasPrevPage;
+  if (!shouldRender) {
     document.getElementById('paginationTop').innerHTML = '';
     document.getElementById('paginationBottom').innerHTML = '';
     return;
@@ -321,7 +340,7 @@ function renderPagination() {
     <div class="simplePagination">
       <div class="paginationInfo">
         <span>Mostrando <strong>${startItem}-${endItem}</strong> de <strong>${totalProducts}</strong></span>
-        <select class="itemsPerPageSelect" onchange="window.changeCatalogItemsPerPage(this.value)">
+        <select class="itemsPerPageSelect" data-pagination-action="page-size">
           <option value="30" ${itemsPerPage === 30 ? 'selected' : ''}>30 por pagina</option>
           <option value="60" ${itemsPerPage === 60 ? 'selected' : ''}>60 por pagina</option>
           <option value="100" ${itemsPerPage === 100 ? 'selected' : ''}>100 por pagina</option>
@@ -329,11 +348,11 @@ function renderPagination() {
         </select>
       </div>
       <div class="paginationControls">
-        <button onclick="window.changeCatalogPage(${currentPage - 1}, event)" ${currentPage === 1 ? 'disabled' : ''} class="pageBtn">
+        <button data-pagination-action="page" data-page="${currentPage - 1}" ${!hasPrevPage ? 'disabled' : ''} class="pageBtn">
           ← Anterior
         </button>
         <span class="pageNumbers">Pagina ${currentPage} de ${totalPages}</span>
-        <button onclick="window.changeCatalogPage(${currentPage + 1}, event)" ${currentPage === totalPages ? 'disabled' : ''} class="pageBtn">
+        <button data-pagination-action="page" data-page="${currentPage + 1}" ${!hasNextPage ? 'disabled' : ''} class="pageBtn">
           Siguiente →
         </button>
       </div>
@@ -342,29 +361,52 @@ function renderPagination() {
 
   document.getElementById('paginationTop').innerHTML = html;
   document.getElementById('paginationBottom').innerHTML = html;
+  wirePaginationControls();
 }
 
-window.changeCatalogPage = async function changeCatalogPage(page, event) {
+async function changeCatalogPage(page, fromBottom = false) {
   if (page < 1 || page > totalPages) return;
 
-  if (event) {
-    const isBottom = event.target.closest('#paginationBottom') !== null;
-    if (isBottom) {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
+  if (fromBottom) {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   currentPage = page;
   await refreshProducts();
-};
+}
 
-window.changeCatalogItemsPerPage = async function changeCatalogItemsPerPage(value) {
+async function changeCatalogItemsPerPage(value) {
   const parsed = Number.parseInt(value, 10);
   itemsPerPage = [30, 60, 100, 200].includes(parsed) ? parsed : 60;
   currentPage = 1;
   await refreshProducts();
   window.scrollTo({ top: 0, behavior: 'smooth' });
-};
+}
+
+function wirePaginationControls() {
+  const top = document.getElementById('paginationTop');
+  const bottom = document.getElementById('paginationBottom');
+
+  [top, bottom].forEach((container) => {
+    if (!container) return;
+
+    container.querySelectorAll('[data-pagination-action="page"]').forEach((btn) => {
+      btn.addEventListener('click', async (event) => {
+        event.preventDefault();
+        const page = Number.parseInt(btn.dataset.page || '', 10);
+        if (!Number.isFinite(page)) return;
+        const isBottom = container.id === 'paginationBottom';
+        await changeCatalogPage(page, isBottom);
+      });
+    });
+
+    container.querySelectorAll('[data-pagination-action="page-size"]').forEach((select) => {
+      select.addEventListener('change', async (event) => {
+        await changeCatalogItemsPerPage(event.target.value);
+      });
+    });
+  });
+}
 
 function handleEditProduct(sku) {
   window.location.href = `/admin/producto/${encodeURIComponent(sku)}`;

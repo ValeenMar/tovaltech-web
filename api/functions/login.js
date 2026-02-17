@@ -134,7 +134,10 @@ app.http("login", {
  * Genera un token JWT seguro usando jsonwebtoken
  */
 function generateToken(payload) {
-  const secret = process.env.JWT_SECRET || "tovaltech-secret-change-in-production";
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error("Missing JWT_SECRET");
+  }
 
   // Generar JWT con expiración de 24 horas
   return jwt.sign(
