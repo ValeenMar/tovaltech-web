@@ -335,7 +335,10 @@ export function getFiltersFromURL() {
     currency: params.get('curr') || 'ARS',
     inStock: params.get('stock') === '1',
     withIVA: params.get('iva') !== '0',
-    fx: params.get('fx') ? parseFloat(params.get('fx')) : null
+    fx: params.get('fx') ? parseFloat(params.get('fx')) : null,
+    page: params.get('page') ? parseInt(params.get('page'), 10) : null,
+    pageSize: params.get('pageSize') ? parseInt(params.get('pageSize'), 10) : null,
+    sort: params.get('sort') || ''
   };
 }
 
@@ -352,6 +355,9 @@ export function setFiltersToURL(filters) {
   if (filters.inStock) params.set('stock', '1');
   if (filters.withIVA === false) params.set('iva', '0');
   if (filters.fx) params.set('fx', String(filters.fx));
+  if (filters.page) params.set('page', String(filters.page));
+  if (filters.pageSize) params.set('pageSize', String(filters.pageSize));
+  if (filters.sort) params.set('sort', String(filters.sort));
   
   const newUrl = params.toString() 
     ? `${window.location.pathname}?${params.toString()}`

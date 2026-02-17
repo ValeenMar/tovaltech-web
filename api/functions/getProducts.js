@@ -180,6 +180,19 @@ function toTime(v) {
   return Number.isFinite(t) ? t : 0;
 }
 
+function normalizeSort(v) {
+  const s = String(v || "").trim().toLowerCase();
+  switch (s) {
+    case "name-desc":
+    case "price-asc":
+    case "price-desc":
+    case "newest":
+      return s;
+    default:
+      return "name-asc";
+  }
+}
+
 app.http("getProducts", {
   methods: ["GET"],
   authLevel: "anonymous",
@@ -190,10 +203,14 @@ app.http("getProducts", {
       const provider = (request.query.get("provider") || "").trim().toLowerCase();
       const qRaw = (request.query.get("q") || "").trim();
       const q = qRaw.toLowerCase();
+      const brandFilter = (request.query.get("brand") || "").trim().toLowerCase();
+      const categoryFilter = (request.query.get("category") || "").trim().toLowerCase();
+      const inStockOnly = String(request.query.get("inStock") || "").trim() === "1";
+      const sort = normalizeSort(request.query.get("sort"));
 
       // 🚀 Paginación
       const page = Math.max(1, toNumber(request.query.get("page")) || 1);
-      const pageSize = Math.max(1, Math.min(200, toNumber(request.query.get("pageSize")) || 50));
+      const pageSize = Math.max(1, Math.min(200, toNumber(request.query.get("pageSize")) || 60));
 
       // Limit total para prevenir carga infinita
       let limit = toNumber(request.query.get("limit"));
@@ -234,6 +251,7 @@ app.http("getProducts", {
 
         const name = e.name ?? e.nombre ?? e.nombre_producto ?? null;
         const brand = e.brand ?? e.marca ?? null;
+        const category = e.category ?? e.categoria ?? null;
 
         if (q) {
           const hay =
@@ -243,11 +261,22 @@ app.http("getProducts", {
           if (!hay) continue;
         }
 
+        if (brandFilter) {
+          const brandValue = String(brand || "").trim().toLowerCase();
+          if (brandValue !== brandFilter) continue;
+        }
+
+        if (categoryFilter) {
+          const categoryValue = String(category || "").trim().toLowerCase();
+          if (categoryValue !== categoryFilter) continue;
+        }
+
         const item = {
           sku,
           providerId: providerId ? String(providerId).toLowerCase() : null,
           name,
           brand,
+          category,
           price: toNumber(e.price),
           currency: normalizeCurrency(e.currency ?? e.moneda),
           ivaRate: toNumber(e.ivaRate ?? e.iva),
@@ -256,6 +285,8 @@ app.http("getProducts", {
           stock: toNumber(e.stock),
           updatedAt: e.updatedAt ?? e.updatedAtIso ?? e.timestamp ?? null,
         };
+
+        if (inStockOnly && (!item.stock || item.stock <= 0)) continue;
 
         const key = `${item.providerId || "_"}::${item.sku}`;
         const prev = byKey.get(key);
@@ -288,6 +319,35 @@ app.http("getProducts", {
       }
 
       items.sort((a, b) => {
+        if (sort === "name-desc") {
+          const an = String(a.name ?? "").toLowerCase();
+          const bn = String(b.name ?? "").toLowerCase();
+          if (an < bn) return 1;
+          if (an > bn) return -1;
+          return String(b.sku ?? "").localeCompare(String(a.sku ?? ""));
+        }
+
+        if (sort === "price-asc") {
+          const ap = Number.isFinite(a.price) ? a.price : Number.MAX_SAFE_INTEGER;
+          const bp = Number.isFinite(b.price) ? b.price : Number.MAX_SAFE_INTEGER;
+          if (ap !== bp) return ap - bp;
+          return String(a.name ?? "").localeCompare(String(b.name ?? ""));
+        }
+
+        if (sort === "price-desc") {
+          const ap = Number.isFinite(a.price) ? a.price : Number.MIN_SAFE_INTEGER;
+          const bp = Number.isFinite(b.price) ? b.price : Number.MIN_SAFE_INTEGER;
+          if (ap !== bp) return bp - ap;
+          return String(a.name ?? "").localeCompare(String(b.name ?? ""));
+        }
+
+        if (sort === "newest") {
+          const ta = toTime(a.updatedAt);
+          const tb = toTime(b.updatedAt);
+          if (ta !== tb) return tb - ta;
+          return String(a.name ?? "").localeCompare(String(b.name ?? ""));
+        }
+
         const an = String(a.name ?? "").toLowerCase();
         const bn = String(b.name ?? "").toLowerCase();
         if (an < bn) return -1;

@@ -8,7 +8,7 @@ const API_BASE = '/api';
  */
 export async function fetchFeaturedProducts(count = 6) {
   try {
-    const res = await fetch(`${API_BASE}/getProducts?limit=500`);
+    const res = await fetch(`${API_BASE}/getProducts?page=1&pageSize=500&limit=500`);
     const data = await res.json();
     
     if (!res.ok || !data.ok) {
