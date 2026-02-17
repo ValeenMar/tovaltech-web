@@ -8,12 +8,54 @@ const _queryItemsCache = new Map();
 const QUERY_CACHE_TTL_MS = 2 * 60 * 1000;
 const QUERY_CACHE_MAX_ENTRIES = 24;
 
+// ---- Clasificación derivada (categoría/subcategoría) ----
+// Si el producto no trae category en la tabla, lo inferimos por name/brand/sku.
+// Mantener en sync con /src/utils/dataHelpers.js (classifyProduct).
+function classifyProductFromText({ name, brand, sku }) {
+  const text = `${name || ""} ${brand || ""} ${sku || ""}`.toLowerCase();
+
+  const has = (re) => re.test(text);
+
+  // Monitores
+  if (has(/\bmonitor\b|\bdisplay\b|\bpantalla\b|\blcd\b|\bled\b|\bips\b|\bqhd\b|\bfhd\b|\b4k\b/)) {
+    return { cat: "Monitores", sub: "Monitores" };
+  }
+
+  // Periféricos
+  if (has(/\bteclad(o|os)\b|\bkeyboard\b/)) return { cat: "Periféricos", sub: "Teclados" };
+  if (has(/\bmouse\b|\brat[oó]n\b/)) return { cat: "Periféricos", sub: "Mouse" };
+  if (has(/\bheadset\b|\bauricular/)) return { cat: "Periféricos", sub: "Audio" };
+
+  // Componentes PC
+  if (has(/\brtx\b|\bgtx\b|\bradeon\b|\bgpu\b/)) return { cat: "Componentes PC", sub: "Placas de video" };
+  if (has(/\bryzen\b|\bintel\b.*\bcore\b|\bcpu\b/)) return { cat: "Componentes PC", sub: "Procesadores" };
+  if (has(/\bmother\b|\bmainboard\b/)) return { cat: "Componentes PC", sub: "Motherboards" };
+  if (has(/\bddr[345]\b|\bram\b|\bmemoria\b/)) return { cat: "Componentes PC", sub: "RAM" };
+  if (has(/\bnvme\b|\bm\.2\b|\bssd\b/)) return { cat: "Componentes PC", sub: "SSD" };
+  if (has(/\bhdd\b|\bhard drive\b/)) return { cat: "Componentes PC", sub: "HDD" };
+  if (has(/\bpsu\b|\bfuente\b|\bpower supply\b/)) return { cat: "Componentes PC", sub: "Fuentes" };
+  if (has(/\bgabinete\b|\bcase\b/)) return { cat: "Componentes PC", sub: "Gabinetes" };
+  if (has(/\bcooler\b|\bfan\b/)) return { cat: "Componentes PC", sub: "Refrigeración" };
+
+  // Almacenamiento externo
+  if (has(/\bpendrive\b|\busb\s?drive\b|\bexternal\b/)) return { cat: "Almacenamiento", sub: "Externos" };
+
+  // Redes
+  if (has(/\brouter\b|\bswitch\b|\bwi-?fi\b|\bethernet\b/)) return { cat: "Networking", sub: "Redes" };
+
+  // Notebooks
+  if (has(/\bnotebook\b|\blaptop\b|\bport[aá]til\b/)) return { cat: "Notebooks", sub: "Portátiles" };
+
+  return { cat: "Otros", sub: "Otros" };
+}
+
 function _getQueryCacheKey(params) {
   return [
     params.provider || "all",
     params.q || "",
     params.brandFilter || "",
     params.categoryFilter || "",
+    params.subcategoryFilter || "",
     params.inStockOnly ? "1" : "0",
     String(params.limit || 10000),
   ].join("|");
@@ -39,192 +81,125 @@ function _writeQueryCache(key, items) {
   oldest.forEach(([k]) => _queryItemsCache.delete(k));
 }
 
-function _getElitCsvUrl() {
-  const uid = process.env.ELIT_USER_ID;
-  const tok = process.env.ELIT_TOKEN;
-  if (!uid || !tok) return null;
-  return `https://clientes.elit.com.ar/v1/api/productos/csv?user_id=${encodeURIComponent(uid)}&token=${encodeURIComponent(tok)}`;
-}
-
-// Minimal CSV parser (comma-separated, supports quotes + newlines inside quotes)
-function _parseCsv(text) {
-  const out = [];
-  let row = [];
-  let field = "";
-  let inQuotes = false;
-
-  // Strip BOM
-  if (text && text.charCodeAt(0) === 0xfeff) text = text.slice(1);
-
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-
-    if (inQuotes) {
-      if (c === '"') {
-        const next = text[i + 1];
-        if (next === '"') {
-          field += '"';
-          i++;
-        } else {
-          inQuotes = false;
-        }
-      } else {
-        field += c;
-      }
-      continue;
-    }
-
-    if (c === '"') {
-      inQuotes = true;
-    } else if (c === ",") {
-      row.push(field);
-      field = "";
-    } else if (c === "\n") {
-      row.push(field);
-      out.push(row);
-      row = [];
-      field = "";
-    } else if (c === "\r") {
-      // ignore
-    } else {
-      field += c;
-    }
-  }
-
-  if (field.length || row.length) {
-    row.push(field);
-    out.push(row);
-  }
-
-  return out;
-}
-
-async function _getElitCsvMap(context) {
-  const url = _getElitCsvUrl();
-  if (!url) return null;
-
-  const now = Date.now();
-  const ttlMs = 15 * 60 * 1000;
-
-  if (_elitCsvCache.map && now - _elitCsvCache.at < ttlMs) return _elitCsvCache.map;
-
-  try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 15000);
-
-    const res = await fetch(url, { signal: ctrl.signal });
-    clearTimeout(t);
-
-    if (!res.ok) throw new Error(`ELIT CSV fetch failed: ${res.status}`);
-
-    const text = await res.text();
-    const rows = _parseCsv(text);
-    if (!rows.length) throw new Error("ELIT CSV empty");
-
-    const header = rows[0].map((h) => String(h || "").trim());
-    const idx = (name) => header.findIndex((h) => h.toLowerCase() === name.toLowerCase());
-
-    const idIx = idx("id");
-    const imgIx = idx("imagen");
-    const thumbIx = idx("miniatura");
-    const ivaIx = idx("iva");
-
-    const map = new Map();
-
-    for (let r = 1; r < rows.length; r++) {
-      const row = rows[r];
-      const sku = idIx >= 0 ? String(row[idIx] || "").trim() : "";
-      if (!sku) continue;
-
-      const imageUrl = imgIx >= 0 ? String(row[imgIx] || "").trim() : "";
-      const thumbUrl = thumbIx >= 0 ? String(row[thumbIx] || "").trim() : "";
-
-      let ivaRate = null;
-      if (ivaIx >= 0) {
-        const raw = String(row[ivaIx] || "").trim().replace(",", ".");
-        const n = Number(raw);
-        if (Number.isFinite(n) && n > 0) ivaRate = n; // percent (e.g., 10.5)
-      }
-
-      map.set(sku, { imageUrl: imageUrl || null, thumbUrl: thumbUrl || null, ivaRate });
-    }
-
-    _elitCsvCache = { at: now, map, error: null };
-    return map;
-  } catch (err) {
-    _elitCsvCache = { at: now, map: null, error: String(err?.message || err) };
-    context?.log?.(`ELIT CSV enrichment disabled: ${_elitCsvCache.error}`);
-    return null;
-  }
-}
-// ---- end ELIT CSV enrichment ----
-
 function getClient() {
   const conn = process.env.STORAGE_CONNECTION_STRING;
-  const tableName = process.env.PRODUCTS_TABLE_NAME || "Products";
+  const tableName = process.env.PRODUCTS_TABLE || "Products";
   if (!conn) throw new Error("Missing STORAGE_CONNECTION_STRING");
   return TableClient.fromConnectionString(conn, tableName);
 }
 
 function toNumber(v) {
   if (v === null || v === undefined || v === "") return null;
-  if (typeof v === "number") return Number.isFinite(v) ? v : null;
-
-  const s0 = String(v).trim();
-  if (!s0) return null;
-
-  // soporta: "2167.68", "2,167.68", "2167,68", "2.167,68"
-  let s = s0.replace(/\s+/g, "");
-  const hasComma = s.includes(",");
-  const hasDot = s.includes(".");
-
-  if (hasComma && hasDot) {
-    if (s.lastIndexOf(",") > s.lastIndexOf(".")) {
-      s = s.replace(/\./g, "").replace(",", ".");
-    } else {
-      s = s.replace(/,/g, "");
-    }
-  } else if (hasComma && !hasDot) {
-    s = s.replace(",", ".");
-  }
-
-  const n = Number(s);
+  const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
 
 function normalizeCurrency(v) {
-  if (v === null || v === undefined || v === "") return null;
-  const s = String(v).trim();
-  if (!s) return null;
-
-  // ELIT suele usar "2" = USD, "1" = ARS
-  if (s === "2" || s.toLowerCase() === "usd") return "USD";
-  if (s === "1" || s.toLowerCase() === "ars") return "ARS";
-  return s.toUpperCase();
+  const s = String(v || "").trim().toUpperCase();
+  if (s === "USD" || s === "ARS") return s;
+  if (s.includes("DOL")) return "USD";
+  if (s.includes("PES")) return "ARS";
+  return s || null;
 }
 
-function escapeODataString(v) {
-  // OData usa comillas simples, se escapan duplicándolas.
-  return String(v).replace(/'/g, "''");
+function escapeODataString(s) {
+  return String(s || "").replace(/'/g, "''");
 }
 
-function toTime(v) {
-  if (!v) return 0;
-  const t = Date.parse(String(v));
-  return Number.isFinite(t) ? t : 0;
+function normalizeSort(s) {
+  const v = String(s || "").trim();
+  const allowed = new Set(["name-asc", "name-desc", "price-asc", "price-desc", "brand-asc", "brand-desc"]);
+  return allowed.has(v) ? v : "name-asc";
 }
 
-function normalizeSort(v) {
-  const s = String(v || "").trim().toLowerCase();
+// ---- ELIT CSV: cache básico ----
+async function getElitCsvMap() {
+  const now = Date.now();
+  if (_elitCsvCache.map && now - _elitCsvCache.at < 10 * 60 * 1000) return _elitCsvCache.map;
+
+  _elitCsvCache = { at: now, map: null, error: null };
+
+  const url = process.env.ELIT_CSV_URL;
+  if (!url) {
+    _elitCsvCache.error = "Missing ELIT_CSV_URL";
+    return null;
+  }
+
+  try {
+    const res = await fetch(url, { headers: { "user-agent": "tovaltech" } });
+    if (!res.ok) throw new Error(`ELIT CSV fetch failed: ${res.status}`);
+    const text = await res.text();
+
+    const lines = text.split(/\r?\n/).filter(Boolean);
+    if (lines.length < 2) throw new Error("ELIT CSV empty");
+
+    const header = lines[0].split(";").map(h => h.trim().toLowerCase());
+    const idxSku = header.indexOf("codigo_producto");
+    const idxImg = header.indexOf("imagen");
+    const idxIva = header.indexOf("iva");
+
+    const map = new Map();
+
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(";");
+      const sku = idxSku >= 0 ? (cols[idxSku] || "").trim() : "";
+      if (!sku) continue;
+
+      const img = idxImg >= 0 ? (cols[idxImg] || "").trim() : "";
+      const ivaRaw = idxIva >= 0 ? (cols[idxIva] || "").trim() : "";
+      const ivaRate = ivaRaw ? Number(String(ivaRaw).replace(",", ".")) : null;
+
+      map.set(sku, { image: img || null, ivaRate: Number.isFinite(ivaRate) ? ivaRate : null });
+    }
+
+    _elitCsvCache.map = map;
+    return map;
+  } catch (e) {
+    _elitCsvCache.error = String(e?.message || e);
+    return null;
+  }
+}
+
+function applySort(items, sort) {
+  const s = normalizeSort(sort);
+
+  const byText = (a, b, key) => {
+    const av = String(a[key] || "").toLowerCase();
+    const bv = String(b[key] || "").toLowerCase();
+    return av.localeCompare(bv);
+  };
+
+  const byNum = (a, b, key) => {
+    const av = Number(a[key] || 0);
+    const bv = Number(b[key] || 0);
+    return av - bv;
+  };
+
+  const sorted = [...items];
+
   switch (s) {
     case "name-desc":
+      sorted.sort((a, b) => byText(b, a, "name"));
+      break;
     case "price-asc":
+      sorted.sort((a, b) => byNum(a, b, "price"));
+      break;
     case "price-desc":
-    case "newest":
-      return s;
+      sorted.sort((a, b) => byNum(b, a, "price"));
+      break;
+    case "brand-asc":
+      sorted.sort((a, b) => byText(a, b, "brand"));
+      break;
+    case "brand-desc":
+      sorted.sort((a, b) => byText(b, a, "brand"));
+      break;
+    case "name-asc":
     default:
-      return "name-asc";
+      sorted.sort((a, b) => byText(a, b, "name"));
+      break;
   }
+
+  return sorted;
 }
 
 app.http("getProducts", {
@@ -239,6 +214,7 @@ app.http("getProducts", {
       const q = qRaw.toLowerCase();
       const brandFilter = (request.query.get("brand") || "").trim().toLowerCase();
       const categoryFilter = (request.query.get("category") || "").trim().toLowerCase();
+      const subcategoryFilter = (request.query.get("subcategory") || request.query.get("sub") || "").trim().toLowerCase();
       const inStockOnly = String(request.query.get("inStock") || "").trim() === "1";
       const sort = normalizeSort(request.query.get("sort"));
       const forceRefresh = String(request.query.get("refresh") || "") === "1";
@@ -252,154 +228,145 @@ app.http("getProducts", {
       if (!limit || limit < 1) limit = 10000; // Aumentado para paginación
       if (limit > 20000) limit = 20000;
 
-      const cacheKey = _getQueryCacheKey({ provider, q, brandFilter, categoryFilter, inStockOnly, limit });
-      const cachedItems = forceRefresh ? null : _readQueryCache(cacheKey);
+      const cacheKey = _getQueryCacheKey({ provider, q, brandFilter, categoryFilter, subcategoryFilter, inStockOnly, limit });
 
-      let items = Array.isArray(cachedItems) ? cachedItems.slice() : null;
+      if (!forceRefresh) {
+        const cached = _readQueryCache(cacheKey);
+        if (cached) {
+          const totalCount = cached.length;
+          const totalPages = Math.ceil(totalCount / pageSize);
+          const startIndex = (page - 1) * pageSize;
+          const endIndex = startIndex + pageSize;
+          const paginatedItems = cached.slice(startIndex, endIndex);
 
-      if (!items) {
-        // Soportamos 2 esquemas posibles (por compatibilidad):
-        // A) PartitionKey = providerId ("elit", "intermaco", ...), RowKey = SKU
-        // B) PartitionKey = "product" y providerId guardado como propiedad
-        // Para filtrar sin saber cuál está en uso, buscamos por PK o por propiedad providerId.
-        let filter = "";
-        if (provider && provider !== "all") {
-          const p = escapeODataString(provider);
-          filter = `(PartitionKey eq '${p}' or providerId eq '${p}')`;
-        }
-
-        const iter = filter
-          ? client.listEntities({ queryOptions: { filter } })
-          : client.listEntities();
-
-        const byKey = new Map(); // dedupe: providerId::sku
-
-        for await (const e of iter) {
-          const rowKey = e.rowKey ?? e.RowKey ?? e.sku ?? e.id ?? e.codigo_producto ?? null;
-          const sku = rowKey ? String(rowKey).trim() : "";
-          if (!sku) continue;
-
-          const pkRaw = String(e.partitionKey ?? e.PartitionKey ?? "").trim().toLowerCase();
-          const propProvider = e.providerId ?? e.proveedorId ?? e.provider ?? null;
-
-          const providerId =
-            (pkRaw && pkRaw !== "product" && pkRaw !== "products" && pkRaw !== "p")
-              ? pkRaw
-              : (propProvider ? String(propProvider).trim().toLowerCase() : (provider || null));
-
-          if (provider && provider !== "all" && providerId && providerId !== provider) continue;
-
-          const name = e.name ?? e.nombre ?? e.nombre_producto ?? null;
-          const brand = e.brand ?? e.marca ?? null;
-          const category = e.category ?? e.categoria ?? null;
-
-          if (q) {
-            const hay =
-              (sku && sku.toLowerCase().includes(q)) ||
-              (name && String(name).toLowerCase().includes(q)) ||
-              (brand && String(brand).toLowerCase().includes(q));
-            if (!hay) continue;
-          }
-
-          if (brandFilter) {
-            const brandValue = String(brand || "").trim().toLowerCase();
-            if (brandValue !== brandFilter) continue;
-          }
-
-          if (categoryFilter) {
-            const categoryValue = String(category || "").trim().toLowerCase();
-            if (categoryValue !== categoryFilter) continue;
-          }
-
-          const item = {
-            sku,
-            providerId: providerId ? String(providerId).toLowerCase() : null,
-            name,
-            brand,
-            category,
-            price: toNumber(e.price),
-            currency: normalizeCurrency(e.currency ?? e.moneda),
-            ivaRate: toNumber(e.ivaRate ?? e.iva),
-            imageUrl: e.imageUrl ?? e.image ?? null,
-            thumbUrl: e.thumbUrl ?? e.thumbnail ?? e.miniatura ?? null,
-            stock: toNumber(e.stock),
-            updatedAt: e.updatedAt ?? e.updatedAtIso ?? e.timestamp ?? null,
+          return {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+              "Cache-Control": "public, max-age=60",
+            },
+            body: JSON.stringify({
+              ok: true,
+              items: paginatedItems,
+              pagination: {
+                page,
+                pageSize,
+                totalCount,
+                totalPages,
+                hasNextPage: page < totalPages,
+                hasPrevPage: page > 1,
+              },
+            }),
           };
-
-          if (inStockOnly && (!item.stock || item.stock <= 0)) continue;
-
-          const key = `${item.providerId || "_"}::${item.sku}`;
-          const prev = byKey.get(key);
-          if (!prev || toTime(item.updatedAt) >= toTime(prev.updatedAt)) {
-            byKey.set(key, item);
-          }
-
-          if (byKey.size >= limit) break;
         }
-
-        items = Array.from(byKey.values());
-
-        const needElit = items.some(
-          (p) => p.providerId === "elit" && (!p.thumbUrl || !p.imageUrl || p.ivaRate == null)
-        );
-
-        if (needElit) {
-          const map = await _getElitCsvMap(context);
-          if (map) {
-            for (const p of items) {
-              if (p.providerId !== "elit") continue;
-              const extra = map.get(p.sku);
-              if (!extra) continue;
-              if (!p.imageUrl && extra.imageUrl) p.imageUrl = extra.imageUrl;
-              if (!p.thumbUrl && extra.thumbUrl) p.thumbUrl = extra.thumbUrl;
-              if ((p.ivaRate == null || p.ivaRate === 0) && extra.ivaRate) p.ivaRate = extra.ivaRate;
-            }
-          }
-        }
-
-        _writeQueryCache(cacheKey, items);
       }
 
-      items.sort((a, b) => {
-        if (sort === "name-desc") {
-          const an = String(a.name ?? "").toLowerCase();
-          const bn = String(b.name ?? "").toLowerCase();
-          if (an < bn) return 1;
-          if (an > bn) return -1;
-          return String(b.sku ?? "").localeCompare(String(a.sku ?? ""));
+      // CSV map (solo si hace falta)
+      const elitMap = await getElitCsvMap();
+
+      // Traemos entities
+      // Filtramos por PK o por propiedad providerId.
+      let filter = "";
+      if (provider && provider !== "all") {
+        const p = escapeODataString(provider);
+        filter = `(PartitionKey eq '${p}' or providerId eq '${p}')`;
+      }
+
+      const iter = filter
+        ? client.listEntities({ queryOptions: { filter } })
+        : client.listEntities();
+
+      const byKey = new Map(); // dedupe: providerId::sku
+
+      for await (const e of iter) {
+        const rowKey = e.rowKey ?? e.RowKey ?? e.sku ?? e.id ?? e.codigo_producto ?? null;
+        const sku = rowKey ? String(rowKey).trim() : "";
+        if (!sku) continue;
+
+        const pkRaw = String(e.partitionKey ?? e.PartitionKey ?? "").trim().toLowerCase();
+        const propProvider = e.providerId ?? e.proveedorId ?? e.provider ?? null;
+
+        const providerId =
+          (pkRaw && pkRaw !== "product" && pkRaw !== "products" && pkRaw !== "p")
+            ? pkRaw
+            : (propProvider ? String(propProvider).trim().toLowerCase() : (provider || null));
+
+        if (provider && provider !== "all" && providerId && providerId !== provider) continue;
+
+        const name = e.name ?? e.nombre ?? e.nombre_producto ?? null;
+        const brand = e.brand ?? e.marca ?? null;
+        const category = e.category ?? e.categoria ?? null;
+
+        const derived = classifyProductFromText({ name, brand, sku });
+        const effectiveCategory = category ? String(category) : derived.cat;
+        const effectiveSubcategory = derived.sub;
+
+        if (q) {
+          const hay =
+            (sku && sku.toLowerCase().includes(q)) ||
+            (name && String(name).toLowerCase().includes(q)) ||
+            (brand && String(brand).toLowerCase().includes(q));
+          if (!hay) continue;
         }
 
-        if (sort === "price-asc") {
-          const ap = Number.isFinite(a.price) ? a.price : Number.MAX_SAFE_INTEGER;
-          const bp = Number.isFinite(b.price) ? b.price : Number.MAX_SAFE_INTEGER;
-          if (ap !== bp) return ap - bp;
-          return String(a.name ?? "").localeCompare(String(b.name ?? ""));
+        if (brandFilter) {
+          const brandValue = String(brand || "").trim().toLowerCase();
+          if (brandValue !== brandFilter) continue;
         }
 
-        if (sort === "price-desc") {
-          const ap = Number.isFinite(a.price) ? a.price : Number.MIN_SAFE_INTEGER;
-          const bp = Number.isFinite(b.price) ? b.price : Number.MIN_SAFE_INTEGER;
-          if (ap !== bp) return bp - ap;
-          return String(a.name ?? "").localeCompare(String(b.name ?? ""));
+        if (categoryFilter) {
+          const categoryValue = String(effectiveCategory || "").trim().toLowerCase();
+          if (categoryValue !== categoryFilter) continue;
         }
 
-        if (sort === "newest") {
-          const ta = toTime(a.updatedAt);
-          const tb = toTime(b.updatedAt);
-          if (ta !== tb) return tb - ta;
-          return String(a.name ?? "").localeCompare(String(b.name ?? ""));
+        if (subcategoryFilter) {
+          const subValue = String(effectiveSubcategory || "").trim().toLowerCase();
+          if (subValue !== subcategoryFilter) continue;
         }
 
-        const an = String(a.name ?? "").toLowerCase();
-        const bn = String(b.name ?? "").toLowerCase();
-        if (an < bn) return -1;
-        if (an > bn) return 1;
-        const asku = String(a.sku ?? "");
-        const bsku = String(b.sku ?? "");
-        return asku.localeCompare(bsku);
-      });
+        const item = {
+          sku,
+          providerId: providerId ? String(providerId).toLowerCase() : null,
+          name,
+          brand,
+          category: effectiveCategory,
+          subcategory: effectiveSubcategory,
+          price: toNumber(e.price),
+          currency: normalizeCurrency(e.currency ?? e.moneda),
+          ivaRate: toNumber(e.ivaRate ?? e.iva ?? e.iva_porcentaje),
+          stock: toNumber(e.stock ?? e.cantidad ?? e.quantity),
+          imageUrl: e.imageUrl ?? e.imagen ?? e.image ?? null,
+          updatedAt: e.updatedAt ?? e.updated_at ?? e.updateAt ?? e.timestamp ?? null,
+        };
 
-      // 🚀 Aplicar paginación
+        // Enriquecimiento ELIT (imagen + iva)
+        if (elitMap && item.providerId === "elit") {
+          const extra = elitMap.get(item.sku);
+          if (extra) {
+            if (extra.image && !item.imageUrl) item.imageUrl = extra.image;
+            if (extra.ivaRate !== null && item.ivaRate === null) item.ivaRate = extra.ivaRate;
+          }
+        }
+
+        // Stock-only
+        if (inStockOnly) {
+          const st = Number(item.stock || 0);
+          if (!Number.isFinite(st) || st <= 0) continue;
+        }
+
+        const key = `${item.providerId || "unknown"}::${item.sku}`;
+        if (!byKey.has(key)) byKey.set(key, item);
+
+        if (byKey.size >= limit) break;
+      }
+
+      let items = [...byKey.values()];
+      items = applySort(items, sort);
+
+      // Cachear resultados full (sin paginar)
+      _writeQueryCache(cacheKey, items);
+
+      // Paginación
       const totalCount = items.length;
       const totalPages = Math.ceil(totalCount / pageSize);
       const startIndex = (page - 1) * pageSize;
