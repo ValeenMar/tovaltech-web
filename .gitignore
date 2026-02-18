@@ -1,29 +1,32 @@
-# Dependencies
+# Dependencias
 node_modules/
 
-# Environment variables
+# Secrets y config local
 .env
 .env.local
+.env.*
+!.env.example
+api/local.settings.json
+api/api/.env
+local.settings.json
 
-# OS files
+# Azurite (emulador local Azure Storage)
+azurite_data/
+azurite_debug.log
+__blobstorage__/
+__queuestorage__/
+
+# OS / Editor
 .DS_Store
 Thumbs.db
-
-# Editor
-.vscode/
-.idea/
 *.swp
 *.swo
 
-# Build
-dist/
-build/
+# Azure CLI local
+.azure/
 
-# Logs
+# Logs y builds
 *.log
 npm-debug.log*
-
-# Azure
-local.settings.json
-.azure/
-azurite_data/
+dist/
+build/
