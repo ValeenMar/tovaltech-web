@@ -233,35 +233,40 @@ export function wireFilterSidebar(callbacks = {}) {
   const { onFilterChange = () => {}, onClearFilters = () => {} } = callbacks;
 
   // Accordions
-  document.querySelectorAll('[data-toggle]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      btn.closest('.filterAccordion')?.classList.toggle('open');
+  const filterSidebar = document.getElementById('filterSidebar');
+  if (filterSidebar && !filterSidebar.dataset.accordionDelegated) {
+    filterSidebar.dataset.accordionDelegated = '1';
+    filterSidebar.addEventListener('click', (e) => {
+      const toggleBtn = e.target.closest('[data-toggle]');
+      if (toggleBtn) {
+        toggleBtn.closest('.filterAccordion')?.classList.toggle('open');
+      }
     });
-  });
+  }
 
   // Category tree clicks
-  document.querySelectorAll('[data-cat-select]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const cat = btn.dataset.catSelect;
+  const sidebar = document.getElementById('storeFilters');
+  if (sidebar && !sidebar.dataset.catDelegated) {
+    sidebar.dataset.catDelegated = '1';
+    sidebar.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-cat-select]');
+      if (!btn) return;
       const catItem = btn.closest('.catItem');
       const wasSelected = catItem?.classList.contains('catSelected');
-
-      // Deselect all
       document.querySelectorAll('.catItem').forEach(el => {
         el.classList.remove('catSelected');
         el.querySelector('.subList')?.classList.remove('subListOpen');
         el.querySelector('.catArrow')?.classList.remove('catArrowOpen');
       });
-
       if (!wasSelected) {
         catItem?.classList.add('catSelected');
         catItem?.querySelector('.subList')?.classList.add('subListOpen');
         catItem?.querySelector('.catArrow')?.classList.add('catArrowOpen');
-        const firstRadio = catItem?.querySelector('[name="filterSub"][value=""]');
-        if (firstRadio) firstRadio.checked = true;
+        const allRadio = catItem?.querySelector('[name="filterSub"][value=""]');
+        if (allRadio) allRadio.checked = true;
       }
     });
-  });
+  }
 
   // Price pills
   document.querySelectorAll('.pricePill').forEach(pill => {
