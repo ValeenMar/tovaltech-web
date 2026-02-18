@@ -266,9 +266,109 @@
 }
 
 .filterAccordion.open .accordionContent {
-  max-height: 300px;
+  max-height: 520px;
   padding: 0 16px 16px;
+  overflow-y: auto;
 }
+
+/* Categoría suele ser larga */
+.filterAccordion[data-accordion="category"].open .accordionContent {
+  max-height: 600px;
+}
+
+/* ========================================
+   CATEGORY TREE (Categoría/Subcategoría)
+   ======================================== */
+.catTreeContent {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.catItem {
+  border: 1px solid var(--border);
+  background: var(--bg1);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.catItem.catSelected {
+  border-color: rgba(0, 229, 255, 0.45);
+  box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.08);
+}
+
+.catHeader {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.catHeader:hover {
+  background: rgba(255,255,255,0.03);
+}
+
+.catArrow {
+  color: var(--muted);
+  transition: transform 0.2s ease;
+}
+
+.catArrowOpen {
+  transform: rotate(180deg);
+}
+
+.catName {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.catCount {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.subList {
+  display: none;
+  border-top: 1px solid var(--border);
+  padding: 8px 12px 10px;
+}
+
+.subListOpen {
+  display: block;
+}
+
+.subItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.subItem .checkboxLabel {
+  font-size: 13px;
+}
+
+.subCount {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
 
 /* Price Pills */
 .pricePills {

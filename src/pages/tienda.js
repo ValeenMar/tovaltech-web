@@ -4,6 +4,7 @@
 import { ProductCard, wireProductCards } from '../components/ProductCard.js';
 import { FilterSidebar, wireFilterSidebar, getFiltersFromURL, setFiltersToURL } from '../components/FilterSidebar.js';
 import { getFxUsdArs, getMargin } from '../utils/dataHelpers.js';
+import { addToCart } from '../components/cart.js';
 
 let pageProducts = [];
 let currentFilters = {};
@@ -21,13 +22,66 @@ const PAGE_SIZE_STORAGE_KEY = 'toval_page_size_tienda';
 
 function buildSubcategoryTree(products = []) {
   const tree = {};
-  products.forEach(p => {
-    const cat = (p.category && String(p.category).trim()) || 'Otros';
-    const sub = (p.subcategory && String(p.subcategory).trim()) || 'Otros';
+  products.forEach((p) => {
+    const cat = (p.category || 'Otros').trim();
+    const sub = (p.subcategory || '').trim();
     if (!tree[cat]) tree[cat] = {};
-    tree[cat][sub] = (tree[cat][sub] || 0) + 1;
+    if (sub) tree[cat][sub] = (tree[cat][sub] || 0) + 1;
+    else tree[cat][''] = (tree[cat][''] || 0) + 1;
   });
   return tree;
+}
+
+function enrichProduct(p) {
+  const base = typeof p.price === 'number' ? p.price : parseFloat(p.price) || 0;
+  const currency = String(p.currency || 'USD').toUpperCase();
+  const ivaRate = typeof p.ivaRate === 'number' ? p.ivaRate : parseFloat(p.ivaRate) || 10.5;
+
+  // Stock: si viene null/undefined, mantenerlo (lo tratamos como "disponible/desconocido")
+  let stock = p.stock;
+  if (stock !== null && stock !== undefined) {
+    stock = typeof stock === 'number' ? stock : parseFloat(stock) || 0;
+  }
+
+  if (base <= 0) {
+    return { ...p, stock, currency, ivaRate, finalPrice: null };
+  }
+
+  // Precio base en ARS (si viene en USD, convertir; si viene en ARS, usar tal cual)
+  const baseArs = currency === 'USD' ? (fx ? base * fx : base) : base;
+
+  // Aplicar margen + IVA
+  const withMargin = baseArs * (1 + (margin || 0) / 100);
+  const withIva = withMargin * (1 + ivaRate / 100);
+
+  const finalPrice = Math.round(withIva);
+
+  return {
+    ...p,
+    stock,
+    currency,
+    ivaRate,
+    finalPrice,
+    // extras útiles
+    basePrice: base,
+    basePriceArs: Math.round(baseArs),
+    marginRate: margin || 0
+  };
+}
+
+function buildQuery() {
+  const params = new URLSearchParams();
+  params.set('page', String(currentPage));
+  params.set('pageSize', String(itemsPerPage));
+  params.set('sort', currentSort);
+
+  if (currentFilters.search) params.set('q', currentFilters.search);
+  if (currentFilters.brand) params.set('brand', currentFilters.brand);
+  if (currentFilters.category) params.set('category', currentFilters.category);
+  if (currentFilters.subcategory) params.set('subcategory', currentFilters.subcategory);
+  if (currentFilters.inStock) params.set('inStock', '1');
+
+  return params.toString();
 }
 
 export function TiendaPage() {
@@ -69,7 +123,7 @@ export function TiendaPage() {
       </div>
 
       <div class="storeLayout">
-        <div class="storeSidebar" id="storeFilters"></div>
+        <div class="storeFilters" id="storeFilters"></div>
 
         <div class="storeMain">
           <div class="resultsBar">
@@ -95,88 +149,64 @@ export async function wireTienda() {
   const pageFromUrl = Number.parseInt(url.searchParams.get('page') || '1', 10);
   const pageSizeFromUrl = Number.parseInt(url.searchParams.get('pageSize') || '60', 10);
   const pageSizeFromStorage = Number.parseInt(localStorage.getItem(PAGE_SIZE_STORAGE_KEY) || '0', 10);
-  const sortFromUrl = url.searchParams.get('sort') || 'name-asc';
 
   currentPage = Number.isFinite(pageFromUrl) && pageFromUrl > 0 ? pageFromUrl : 1;
-  if ([30, 60, 100, 200].includes(pageSizeFromUrl)) {
-    itemsPerPage = pageSizeFromUrl;
-  } else if ([30, 60, 100, 200].includes(pageSizeFromStorage)) {
-    itemsPerPage = pageSizeFromStorage;
-  } else {
-    itemsPerPage = 60;
-  }
-  currentSort = sortFromUrl;
+  itemsPerPage =
+    Number.isFinite(pageSizeFromUrl) && pageSizeFromUrl > 0
+      ? pageSizeFromUrl
+      : (Number.isFinite(pageSizeFromStorage) && pageSizeFromStorage > 0 ? pageSizeFromStorage : 60);
 
-  renderFilterSidebar();
-  wireFilterSidebar({
-    onFilterChange: handleFilterChange,
-    onClearFilters: handleClearFilters,
+  const sortFromUrl = url.searchParams.get('sort');
+  if (sortFromUrl) currentSort = sortFromUrl;
+
+  // UI events
+  document.getElementById('btnToggleFilters')?.addEventListener('click', () => {
+    document.getElementById('storeFilters')?.classList.toggle('show');
   });
 
-  const sortSel = document.getElementById('sortSelect');
-  if (sortSel) {
-    sortSel.value = currentSort;
-    sortSel.addEventListener('change', async (e) => {
+  const sortSelect = document.getElementById('sortSelect');
+  if (sortSelect) {
+    sortSelect.value = currentSort;
+    sortSelect.addEventListener('change', async (e) => {
       currentSort = e.target.value;
       currentPage = 1;
       await refreshProducts();
     });
   }
 
-  const pageSizeSel = document.getElementById('pageSizeSelect');
-  if (pageSizeSel) {
-    pageSizeSel.value = String(itemsPerPage);
-    pageSizeSel.addEventListener('change', async (e) => {
-      const v = Number.parseInt(e.target.value, 10);
-      if ([30, 60, 100, 200].includes(v)) {
-        itemsPerPage = v;
-        localStorage.setItem(PAGE_SIZE_STORAGE_KEY, String(itemsPerPage));
-        currentPage = 1;
-        await refreshProducts();
-      }
+  const pageSizeSelect = document.getElementById('pageSizeSelect');
+  if (pageSizeSelect) {
+    pageSizeSelect.value = String(itemsPerPage);
+    pageSizeSelect.addEventListener('change', async (e) => {
+      itemsPerPage = parseInt(e.target.value, 10) || 60;
+      localStorage.setItem(PAGE_SIZE_STORAGE_KEY, String(itemsPerPage));
+      currentPage = 1;
+      await refreshProducts();
     });
   }
 
-  document.getElementById('btnToggleFilters')?.addEventListener('click', () => {
-    document.getElementById('storeFilters')?.classList.toggle('show');
-  });
-
   await refreshProducts();
-}
-
-function enrichProduct(p) {
-  const base = typeof p.price === 'number' ? p.price : parseFloat(p.price) || 0;
-  const currency = (p.currency || 'USD').toUpperCase();
-  const ivaRate = typeof p.ivaRate === 'number' ? p.ivaRate : parseFloat(p.ivaRate) || 0;
-
-  const usd = currency === 'USD' ? base : (fx ? base / fx : base);
-  const usdWithMargin = usd * (1 + (margin / 100));
-  const ars = Math.round(usdWithMargin * fx);
-
-  const arsIva = Math.round(ars * (1 + (ivaRate / 100)));
-
-  return {
-    ...p,
-    priceUSD: usdWithMargin,
-    priceARS: ars,
-    priceARSIVA: arsIva,
-    fxUsed: fx,
-    marginUsed: margin,
-  };
 }
 
 function renderFilterSidebar() {
   const container = document.getElementById('storeFilters');
   if (!container) return;
 
-  const brands = [...new Set(pageProducts.map((p) => p.brand).filter(Boolean))].sort();
+  const brands = [...new Set(pageProducts.map(p => p.brand).filter(Boolean))].sort();
   const subcategoryTree = buildSubcategoryTree(pageProducts);
 
   container.innerHTML = FilterSidebar({
     mode: 'client',
     brands,
     subcategoryTree,
+    providers: [], // tienda no muestra proveedor
     currentFilters,
+  });
+
+  wireFilterSidebar({
+    onChange: handleFilterChange,
+    onClear: handleClearFilters,
+    isAdmin: false,
   });
 }
 
@@ -193,31 +223,29 @@ async function handleClearFilters() {
   await refreshProducts();
 }
 
+function handleAddToCart(sku) {
+  const p = pageProducts.find(x => String(x.sku) === String(sku));
+  if (!p) return;
+
+  addToCart({
+    sku: p.sku,
+    name: p.name,
+    brand: p.brand,
+    providerId: p.providerId || p.provider || null,
+    price: typeof p.price === 'number' ? p.price : parseFloat(p.price) || 0,
+    currency: p.currency || 'USD',
+    ivaRate: typeof p.ivaRate === 'number' ? p.ivaRate : parseFloat(p.ivaRate) || 10.5,
+    stock: p.stock === undefined ? null : p.stock,
+    imageUrl: p.imageUrl || p.thumbUrl || p.image || null,
+  });
+}
+
 async function refreshProducts() {
   setFiltersToURL({ ...currentFilters, page: currentPage, pageSize: itemsPerPage, sort: currentSort });
   await loadProducts();
   renderFilterSidebar();
-  wireFilterSidebar({
-    onFilterChange: handleFilterChange,
-    onClearFilters: handleClearFilters,
-  });
   renderProducts();
   renderPagination();
-}
-
-function buildQuery() {
-  const params = new URLSearchParams();
-  params.set('page', String(currentPage));
-  params.set('pageSize', String(itemsPerPage));
-  params.set('sort', currentSort);
-
-  if (currentFilters.search) params.set('q', currentFilters.search);
-  if (currentFilters.brand) params.set('brand', currentFilters.brand);
-  if (currentFilters.category) params.set('category', currentFilters.category);
-  if (currentFilters.subcategory) params.set('subcategory', currentFilters.subcategory);
-  if (currentFilters.inStock) params.set('inStock', '1');
-
-  return params.toString();
 }
 
 async function loadProducts() {
@@ -230,33 +258,13 @@ async function loadProducts() {
 
     if (!res.ok || !data.ok) throw new Error(data?.error || 'API error');
 
-    const items = Array.isArray(data.items) ? data.items : [];
-    pageProducts = items.map((p) => enrichProduct(p));
+    totalProducts = data.total || 0;
+    totalPages = data.totalPages || 1;
+    hasNextPage = !!data.hasNextPage;
+    hasPrevPage = !!data.hasPrevPage;
+    currentPage = data.page || currentPage;
 
-    const pagination = data.pagination || {};
-    const hasServerPagination = Number.isFinite(pagination.totalPages) && Number.isFinite(pagination.totalCount);
-
-    if (hasServerPagination) {
-      totalProducts = pagination.totalCount;
-      totalPages = Math.max(1, pagination.totalPages);
-      hasNextPage = Boolean(pagination.hasNextPage);
-      hasPrevPage = Boolean(pagination.hasPrevPage);
-    } else {
-      hasPrevPage = currentPage > 1;
-      hasNextPage = pageProducts.length === itemsPerPage;
-      totalPages = hasNextPage ? currentPage + 1 : currentPage;
-      totalProducts = hasNextPage
-        ? (currentPage * itemsPerPage) + 1
-        : ((currentPage - 1) * itemsPerPage) + pageProducts.length;
-      console.warn('getProducts response without pagination metadata; using fallback pagination mode.');
-    }
-
-    if (totalProducts > 0 && pageProducts.length === 0 && currentPage > totalPages) {
-      currentPage = totalPages;
-      return loadProducts();
-    }
-
-    currentPage = Math.min(Math.max(1, currentPage), totalPages);
+    pageProducts = (Array.isArray(data.items) ? data.items : []).map(enrichProduct);
   } catch (err) {
     console.error('Error loading products:', err);
     pageProducts = [];
@@ -294,8 +302,14 @@ function renderProducts() {
     return;
   }
 
-  grid.innerHTML = pageProducts.map((p) => ProductCard(p, { fx, margin, showProvider: false })).join('');
-  wireProductCards();
+  grid.innerHTML = pageProducts.map((p) => ProductCard(p, {
+    mode: 'client',
+    onAddToCart: handleAddToCart,
+  })).join('');
+
+  wireProductCards(grid, {
+    onAddToCart: handleAddToCart,
+  });
 }
 
 function renderPagination() {
@@ -303,34 +317,38 @@ function renderPagination() {
   const bottom = document.getElementById('paginationBottom');
   if (!top || !bottom) return;
 
-  const disablePrev = !hasPrevPage || currentPage <= 1;
-  const disableNext = !hasNextPage || currentPage >= totalPages;
+  const mini = `
+    <button class="btn btnGhost btnMini" id="btnPrevTop" ${hasPrevPage ? '' : 'disabled'}>Anterior</button>
+    <span class="pageMiniInfo">Página ${currentPage} de ${totalPages}</span>
+    <button class="btn btnGhost btnMini" id="btnNextTop" ${hasNextPage ? '' : 'disabled'}>Siguiente</button>
+  `;
 
-  const html = `
-    <div class="pagination">
-      <button class="btn btnGhost" id="btnPrevPage" ${disablePrev ? 'disabled' : ''}>Anterior</button>
-      <div class="pageInfo">Página ${currentPage} de ${totalPages}</div>
-      <button class="btn btnGhost" id="btnNextPage" ${disableNext ? 'disabled' : ''}>Siguiente</button>
+  top.innerHTML = mini;
+
+  bottom.innerHTML = `
+    <div class="paginationFull">
+      <button class="btn btnGhost" id="btnPrevBottom" ${hasPrevPage ? '' : 'disabled'}>← Anterior</button>
+      <div class="paginationInfo">Página ${currentPage} de ${totalPages}</div>
+      <button class="btn btnGhost" id="btnNextBottom" ${hasNextPage ? '' : 'disabled'}>Siguiente →</button>
     </div>
   `;
 
-  top.innerHTML = html;
-  bottom.innerHTML = html;
+  document.getElementById('btnPrevTop')?.addEventListener('click', goPrev);
+  document.getElementById('btnNextTop')?.addEventListener('click', goNext);
+  document.getElementById('btnPrevBottom')?.addEventListener('click', goPrev);
+  document.getElementById('btnNextBottom')?.addEventListener('click', goNext);
+}
 
-  const goPrev = async () => {
-    if (disablePrev) return;
-    currentPage = Math.max(1, currentPage - 1);
-    await refreshProducts();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+async function goPrev() {
+  if (!hasPrevPage) return;
+  currentPage -= 1;
+  await refreshProducts();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
 
-  const goNext = async () => {
-    if (disableNext) return;
-    currentPage = Math.min(totalPages, currentPage + 1);
-    await refreshProducts();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  document.querySelectorAll('#btnPrevPage').forEach(btn => btn.addEventListener('click', goPrev));
-  document.querySelectorAll('#btnNextPage').forEach(btn => btn.addEventListener('click', goNext));
+async function goNext() {
+  if (!hasNextPage) return;
+  currentPage += 1;
+  await refreshProducts();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }

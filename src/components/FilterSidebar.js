@@ -245,7 +245,8 @@ export function wireFilterSidebar(callbacks = {}) {
   }
 
   // Category tree clicks
-  const sidebar = document.getElementById('storeFilters');
+  // Category tree clicks (funciona en Tienda y Catálogo)
+const sidebar = document.getElementById('filterSidebar');
   if (sidebar && !sidebar.dataset.catDelegated) {
     sidebar.dataset.catDelegated = '1';
     sidebar.addEventListener('click', (e) => {
